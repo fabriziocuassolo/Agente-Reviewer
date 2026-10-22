@@ -1,0 +1,14 @@
+node_modules/
+dist/
+coverage/
+
+# Variables de entorno: nunca se commitean (solo el ejemplo)
+.env
+.env.*
+!.env.example
+
+# Copias de trabajo temporales que crea `npm run demo`
+.demo-work/
+
+*.log
+.DS_Store

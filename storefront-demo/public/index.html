@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Casa Almendra · Tienda</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="/">Casa Almendra</a>
+      <button id="cart-toggle" class="cart-toggle" type="button" aria-controls="cart-panel" aria-expanded="false">
+        Carrito <span id="cart-count" class="badge">0</span>
+      </button>
+    </header>
+
+    <main class="container">
+      <section class="hero">
+        <h1>Objetos simples para la casa</h1>
+        <p>Envío gratis en compras desde $50. Probá el cupón <strong>BIENVENIDA10</strong>.</p>
+      </section>
+
+      <div id="catalog-toolbar" class="toolbar"></div>
+      <section id="catalog" class="grid" aria-live="polite"></section>
+    </main>
+
+    <!-- Carrito lateral -->
+    <div id="overlay" class="overlay" hidden></div>
+    <aside id="cart-panel" class="cart-panel" aria-label="Carrito" aria-hidden="true">
+      <div class="cart-header">
+        <h2>Tu carrito</h2>
+        <button id="cart-close" class="icon-button" type="button" aria-label="Cerrar carrito">✕</button>
+      </div>
+
+      <ul id="cart-items" class="cart-items"></ul>
+      <p id="cart-empty" class="muted">Tu carrito está vacío.</p>
+
+      <form id="coupon-form" class="coupon-form">
+        <label for="coupon-input" class="sr-only">Cupón de descuento</label>
+        <input id="coupon-input" name="code" placeholder="Cupón de descuento" autocomplete="off" />
+        <button type="submit" class="button secondary">Aplicar</button>
+      </form>
+      <p id="coupon-applied" class="coupon-applied" hidden>
+        Cupón <strong id="coupon-code"></strong> aplicado
+        <button id="coupon-remove" type="button" class="link-button">quitar</button>
+      </p>
+
+      <dl id="cart-totals" class="totals"></dl>
+      <button id="go-checkout" class="button primary block" type="button">Ir a pagar</button>
+    </aside>
+
+    <!-- Checkout -->
+    <dialog id="checkout-dialog" class="checkout-dialog">
+      <form id="checkout-form" method="dialog" class="checkout">
+        <div class="checkout-header">
+          <h2>Finalizar compra</h2>
+          <button id="checkout-close" class="icon-button" type="button" aria-label="Cerrar">✕</button>
+        </div>
+        <div class="checkout-body">
+          <div class="checkout-fields">
+            <label>Nombre completo <input name="name" required minlength="2" autocomplete="name" /></label>
+            <label>Email <input name="email" type="email" required autocomplete="email" /></label>
+            <label>Dirección de envío <input name="address" required minlength="5" autocomplete="street-address" /></label>
+          </div>
+          <div class="checkout-summary">
+            <h3>Resumen</h3>
+            <ul id="summary-lines" class="summary-lines"></ul>
+            <dl id="summary-totals" class="totals"></dl>
+          </div>
+        </div>
+        <p id="checkout-error" class="error" role="alert" hidden></p>
+        <button type="submit" class="button primary block">Confirmar compra</button>
+      </form>
+
+      <div id="order-confirmation" class="confirmation" hidden>
+        <div class="confirmation-icon">✓</div>
+        <h2>¡Gracias por tu compra!</h2>
+        <p>Pedido <strong id="order-id"></strong></p>
+        <p>Total pagado: <strong id="order-total"></strong></p>
+        <button id="confirmation-close" class="button primary" type="button">Seguir comprando</button>
+      </div>
+    </dialog>
+
+    <div id="toast" class="toast" role="status" hidden></div>
+
+    <script src="app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,16 @@
+{
+  "name": "storefront-guardian",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Agente de revisión de código para equipos de e-commerce (prototipo)",
+  "engines": {
+    "node": ">=20"
+  },
+  "workspaces": [
+    "storefront-demo"
+  ],
+  "scripts": {
+    "store": "npm run start --workspace storefront-demo",
+    "test": "npm run test --workspaces --if-present"
+  }
+}

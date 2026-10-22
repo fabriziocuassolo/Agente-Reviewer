@@ -1,0 +1,82 @@
+[
+  {
+    "id": "p-001",
+    "name": "Taza de cerámica artesanal",
+    "description": "Taza esmaltada a mano, 350 ml. Apta para microondas.",
+    "category": "cocina",
+    "priceCents": 1850,
+    "stock": 24,
+    "emoji": "☕",
+    "color": "#f4d9c6"
+  },
+  {
+    "id": "p-002",
+    "name": "Prensa francesa 1 L",
+    "description": "Cafetera de émbolo con filtro de acero inoxidable.",
+    "category": "cocina",
+    "priceCents": 4290,
+    "stock": 8,
+    "emoji": "🫖",
+    "color": "#e3e8d6"
+  },
+  {
+    "id": "p-003",
+    "name": "Café de especialidad 500 g",
+    "description": "Granos tostados de Colombia, notas a chocolate y caramelo.",
+    "category": "almacen",
+    "priceCents": 2490,
+    "stock": 40,
+    "emoji": "🫘",
+    "color": "#e9dccf"
+  },
+  {
+    "id": "p-004",
+    "name": "Mantel de lino",
+    "description": "Mantel rectangular 150 x 220 cm, lino lavado.",
+    "category": "hogar",
+    "priceCents": 5900,
+    "stock": 5,
+    "emoji": "🧺",
+    "color": "#dfe6ee"
+  },
+  {
+    "id": "p-005",
+    "name": "Vela aromática de soja",
+    "description": "Aroma a cedro y vainilla, 40 horas de duración.",
+    "category": "hogar",
+    "priceCents": 1590,
+    "stock": 30,
+    "emoji": "🕯️",
+    "color": "#f6ecd2"
+  },
+  {
+    "id": "p-006",
+    "name": "Tabla de madera para picar",
+    "description": "Madera de algarrobo, 40 x 25 cm, con canaleta.",
+    "category": "cocina",
+    "priceCents": 3200,
+    "stock": 12,
+    "emoji": "🪵",
+    "color": "#eadfce"
+  },
+  {
+    "id": "p-007",
+    "name": "Té verde en hebras 100 g",
+    "description": "Sencha japonés de cosecha de primavera.",
+    "category": "almacen",
+    "priceCents": 1290,
+    "stock": 0,
+    "emoji": "🍵",
+    "color": "#dcebd5"
+  },
+  {
+    "id": "p-008",
+    "name": "Planta suculenta en maceta",
+    "description": "Echeveria en maceta de barro de 12 cm.",
+    "category": "hogar",
+    "priceCents": 990,
+    "stock": 18,
+    "emoji": "🪴",
+    "color": "#d9eadf"
+  }
+]
