@@ -49,6 +49,8 @@ export interface ReviewReport {
   timings: StageTiming[];
   /** Datos de la llamada al LLM, si se hizo. */
   llm?: LLMUsage;
+  /** Hallazgos ocultados porque el equipo ya los descartó (memoria). */
+  dismissed: Finding[];
 }
 
 export interface LLMUsage {
@@ -61,6 +63,10 @@ export interface LLMUsage {
   redactions: number;
   /** Archivos que no se enviaron (ignorados, binarios o por tamaño). */
   omitted: string[];
+  /** Skills cargadas para esta revisión. */
+  skills: string[];
+  /** Excepciones de la memoria incluidas en el prompt. */
+  exceptions: number;
   /** true si la llamada falló y no hubo revisión de IA. */
   failed: boolean;
   /** Archivo donde se guardó la grabación (solo con --record). */

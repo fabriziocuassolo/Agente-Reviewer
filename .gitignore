@@ -12,3 +12,6 @@ coverage/
 
 *.log
 .DS_Store
+
+# Último reporte de guardian (lo usa `guardian dismiss`)
+.guardian/last-review.json

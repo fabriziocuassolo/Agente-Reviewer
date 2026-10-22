@@ -35,6 +35,8 @@ const userConfigSchema = z.object({
     .optional(),
   gate: z.object({ rules: z.array(ruleSchema).min(1).optional() }).optional(),
   context: z.object({ maxChars: z.number().int().min(1000).optional() }).optional(),
+  /** Skill → patrones de archivos (sintaxis .gitignore) que la activan. */
+  skills: z.record(z.string(), z.array(z.string().min(1)).min(1)).optional(),
 });
 
 export interface GuardianConfig {
@@ -48,6 +50,8 @@ export interface GuardianConfig {
   gate: { rules: GateRule[] };
   /** Tope de caracteres enviados al LLM (~4 caracteres por token). Controla costo y latencia. */
   context: { maxChars: number };
+  /** Si no se define, se cargan todas las skills de .guardian/skills. */
+  skills?: Record<string, string[]>;
 }
 
 // Reglas por defecto del gate, tal como pide la consigna.
@@ -89,5 +93,6 @@ export function loadConfig(repoRoot: string): GuardianConfig {
     checks: { ...DEFAULT_CONFIG.checks, ...user.checks },
     gate: { rules: user.gate?.rules ?? DEFAULT_RULES },
     context: { maxChars: user.context?.maxChars ?? DEFAULT_CONFIG.context.maxChars },
+    skills: user.skills,
   };
 }

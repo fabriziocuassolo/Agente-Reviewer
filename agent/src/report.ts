@@ -44,6 +44,11 @@ export function renderReport(report: ReviewReport): string {
     out.push(pc.green("Sin hallazgos."), "");
   }
 
+  if (report.dismissed.length > 0) {
+    const ids = report.dismissed.map((f) => f.id).join(", ");
+    out.push(pc.dim(`${report.dismissed.length} hallazgo(s) ocultos porque el equipo ya los descartó (${ids}). Ver .guardian/memory.json`), "");
+  }
+
   if (report.llm) out.push(pc.dim(renderLLM(report)), "");
 
   for (const warning of report.warnings) out.push(pc.yellow(`⚠ ${warning}`));
@@ -53,7 +58,11 @@ export function renderReport(report: ReviewReport): string {
   const rule = report.gate.rule ? `Regla "${report.gate.rule}": ` : "";
   out.push(pc.dim(`  ${rule}${report.gate.reason}`), "");
 
-  out.push(pc.dim(renderTimings(report.timings)), "");
+  out.push(pc.dim(renderTimings(report.timings)));
+  if (report.findings.some((f) => f.source === "llm")) {
+    out.push(pc.dim('¿Falso positivo? guardian dismiss <id> "<motivo>"'));
+  }
+  out.push("");
   return out.join("\n");
 }
 
@@ -84,6 +93,8 @@ function renderLLM({ llm }: ReviewReport): string {
     `IA: ${llm.provider} · ${llm.model} · ${formatTokens(llm.inputTokens)} tokens de entrada / ${formatTokens(llm.outputTokens)} de salida` +
       (llm.attempts > 1 ? ` · ${llm.attempts} intentos` : ""),
   ];
+  if (llm.skills.length > 0) lines.push(`Skills aplicadas: ${llm.skills.join(", ")}`);
+  if (llm.exceptions > 0) lines.push(`Memoria: ${llm.exceptions} excepción(es) conocida(s) incluidas en el prompt`);
   if (llm.redactions > 0) lines.push(`Privacidad: ${llm.redactions} secreto(s) redactado(s) antes de enviar el código`);
   if (llm.omitted.length > 0) lines.push(`No enviados al modelo: ${llm.omitted.join(", ")}`);
   if (llm.recordedTo) lines.push(`Grabación guardada en: ${llm.recordedTo}`);

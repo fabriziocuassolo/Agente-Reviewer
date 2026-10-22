@@ -105,6 +105,29 @@
     pero tampoco da luz verde sin revisión. Con --no-llm explícito se mantiene APROBADO.
   - Ollama: num_ctx 16384 explícito (por defecto Ollama recorta el prompt en silencio a 2-4k
     tokens) y timeout mayor (180 s) porque un 7B en CPU es lento. No probado en esta máquina.
+  - Se mantuvo la regla de la consigna en 03 (decisión del autor): crítico determinístico → sin LLM.
+
+  Fase 5 — Skills, memoria y dismiss:
+  - Skills = markdown en .guardian/skills/ con criterios de revisión (checklists + severidad
+    sugerida). Se cargan SOLO las que matchean los archivos cambiados, según un mapeo
+    skill → patrones en config.json (misma sintaxis que .gitignore, librería `ignore`).
+    Por qué selectivo: cada skill suma tokens (costo/latencia) y ruido. Sin mapeo → todas.
+  - Diferencia CONVENTIONS vs skills: convenciones = reglas de la empresa (qué);
+    skills = cómo revisar un área y qué severidad asignar (criterio del revisor).
+  - Evidencia: con skills, gemini-3.5-flash-lite (el modelo barato) encontró el await
+    faltante del escenario 04 como crítico en 1,5 s; sin skills había subestimado severidades.
+  - Memoria en .guardian/memory.json DENTRO del repo revisado y commiteada: el conocimiento es
+    del equipo, queda versionado y se revisa en PRs como cualquier código.
+  - Doble efecto: (1) filtro exacto por ID (determinístico, auditable) y (2) "excepciones
+    conocidas" en el prompt, para que el modelo no repita el criterio redactado distinto.
+    Solo se pasan las excepciones de los archivos del cambio (máx. 20): el prompt no crece sin límite.
+  - dismiss exige motivo (lo lee el resto del equipo) y NO permite descartar lint/tipos/tests:
+    son hechos, no opiniones; se arreglan o se ajusta el comando en config.
+  - Los hallazgos descartados no cuentan para el gate, ni para decidir si se llama al LLM.
+  - `dismiss` usa .guardian/last-review.json (último reporte, no se commitea) para saber a qué
+    hallazgo corresponde el ID.
+  - Limitación: los IDs de hallazgos de la IA dependen del texto de la explicación, que puede
+    variar entre corridas; por eso el refuerzo vía prompt es importante.
 -->
 
 ## 4. Cómo balanceé costo, tiempo, privacidad y operabilidad

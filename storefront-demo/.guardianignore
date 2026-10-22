@@ -1,0 +1,7 @@
+# Archivos que Guardian NUNCA envía al modelo (sintaxis de .gitignore).
+# Además, siempre se excluyen: .env*, node_modules/, dist/, binarios y lockfiles.
+
+# Datos de catálogo: no aportan a la revisión de código
+data/
+
+coverage/

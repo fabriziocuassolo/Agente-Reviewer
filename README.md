@@ -29,3 +29,9 @@ npm run demo -- all
 ```
 
 Ver [demo/README.md](demo/README.md).
+
+## Falsos positivos
+
+```bash
+guardian dismiss G-3f2a1c "motivo"   # se guarda en .guardian/memory.json
+```

@@ -1,0 +1,31 @@
+{
+  "baseBranch": "main",
+  "checks": {
+    "lint": "npm run lint --silent",
+    "typecheck": "npm run typecheck --silent",
+    "test": "npm test --silent",
+    "timeoutMs": 120000
+  },
+  "gate": {
+    "rules": [
+      { "name": "critico-bloquea", "severity": "critico", "min": 1, "decision": "BLOQUEADO" },
+      { "name": "muchos-altos-bloquean", "severity": "alto", "min": 3, "decision": "BLOQUEADO" },
+      { "name": "alto-advierte", "severity": "alto", "min": 1, "decision": "ADVERTENCIA" },
+      { "name": "medio-advierte", "severity": "medio", "min": 1, "decision": "ADVERTENCIA" }
+    ]
+  },
+  "context": {
+    "maxChars": 80000
+  },
+  "skills": {
+    "ecommerce-pricing": [
+      "src/services/pricing.ts",
+      "src/services/discounts.ts",
+      "src/services/checkout.ts",
+      "src/routes/carts.ts"
+    ],
+    "backend": ["src/**/*.ts"],
+    "security": ["src/**", "public/**"],
+    "frontend": ["public/**"]
+  }
+}

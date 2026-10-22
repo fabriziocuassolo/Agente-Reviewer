@@ -2,6 +2,8 @@
 import { Command } from "commander";
 import pc from "picocolors";
 import { loadGuardianEnv } from "./env.js";
+import { getRepoRoot } from "./git.js";
+import { dismissFinding, MEMORY_PATH } from "./memory.js";
 import { renderReport } from "./report.js";
 import { runReview } from "./review.js";
 import { GuardianError } from "./types.js";
@@ -31,6 +33,19 @@ program
     }
     // Exit code 1 si está bloqueado: así el hook pre-push y la CI pueden cortar.
     process.exitCode = report.decision === "BLOQUEADO" ? 1 : 0;
+  });
+
+program
+  .command("dismiss")
+  .description("Marca un hallazgo de la última revisión como falso positivo y lo guarda en la memoria del equipo")
+  .argument("<id>", "ID del hallazgo (ej: G-3f2a1c)")
+  .argument("<motivo>", "por qué no aplica (lo va a leer el resto del equipo)")
+  .action((id: string, reason: string) => {
+    const root = getRepoRoot(process.cwd());
+    if (!root) throw new GuardianError("Este directorio no está dentro de un repositorio git.");
+    const entry = dismissFinding(root, id, reason);
+    console.log(pc.green(`✔ ${entry.id} descartado: "${entry.reason}"`));
+    console.log(pc.dim(`  Guardado en ${MEMORY_PATH}. Commitealo para que lo aproveche todo el equipo.`));
   });
 
 program.parseAsync().catch((error: unknown) => {

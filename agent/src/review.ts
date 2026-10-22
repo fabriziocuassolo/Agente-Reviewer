@@ -7,6 +7,8 @@ import { decide, sortFindings } from "./gate.js";
 import { collectChanges, getRepoRoot } from "./git.js";
 import { createProvider } from "./llm/provider.js";
 import { RecordingProvider } from "./llm/replay.js";
+import { applyMemory, loadMemory, relevantExceptions, saveLastReview } from "./memory.js";
+import { loadSkills } from "./skills.js";
 import type { LLMProvider } from "./llm/types.js";
 import { reviewWithLLM } from "./reviewer.js";
 import { StageTimer } from "./timer.js";
@@ -37,6 +39,7 @@ export async function runReview(options: ReviewOptions): Promise<ReviewReport> {
   if (!root) throw new GuardianError("Este directorio no está dentro de un repositorio git.");
 
   const config = loadConfig(root);
+  const memory = loadMemory(root);
   const timer = new StageTimer();
   const warnings: string[] = [];
 
@@ -49,6 +52,7 @@ export async function runReview(options: ReviewOptions): Promise<ReviewReport> {
       changes: { description: changes.description, files: [] },
       checks: [],
       findings: [],
+      dismissed: [],
       warnings,
       timings: [...timer.timings, timer.total()],
     };
@@ -77,7 +81,8 @@ export async function runReview(options: ReviewOptions): Promise<ReviewReport> {
   let llmFailed = false;
 
   // 3 y 4. Revisión con IA (solo si tiene sentido gastarla)
-  const hasCritical = findings.some((f) => f.severity === "critico");
+  // (un secreto falso de un test, ya descartado por el equipo, no debe frenar la revisión con IA)
+  const hasCritical = applyMemory(findings, memory).kept.some((f) => f.severity === "critico");
   const { provider, reason } =
     options.provider !== undefined ? { provider: options.provider, reason: "proveedor no disponible" } : createProvider(process.env, { record: options.record });
 
@@ -89,14 +94,21 @@ export async function runReview(options: ReviewOptions): Promise<ReviewReport> {
   } else if (!provider) {
     warnings.push(`Se omitió la revisión con IA: ${reason}.`);
   } else {
-    const context = await timer.measure("Contexto", () => buildContext(root, changes, config.context.maxChars));
-    const result = await timer.measure("Revisión IA", () => reviewWithLLM(provider, context));
+    const { context, guidance } = await timer.measure("Contexto", () => {
+      const context = buildContext(root, changes, config.context.maxChars);
+      const { skills, warnings: skillWarnings } = loadSkills(root, config, context.changedFiles);
+      warnings.push(...skillWarnings);
+      return { context, guidance: { skills, exceptions: relevantExceptions(memory, context.changedFiles) } };
+    });
+    const result = await timer.measure("Revisión IA", () => reviewWithLLM(provider, context, guidance));
     findings.push(...result.findings);
     warnings.push(...result.warnings);
     llmFailed = result.degraded;
     llm = {
       provider: provider.name,
       model: provider.model,
+      skills: guidance.skills.map((s) => s.name),
+      exceptions: guidance.exceptions.length,
       inputTokens: result.inputTokens,
       outputTokens: result.outputTokens,
       attempts: result.attempts,
@@ -107,8 +119,11 @@ export async function runReview(options: ReviewOptions): Promise<ReviewReport> {
     };
   }
 
+  // Memoria: lo que el equipo ya descartó no cuenta para la decisión.
+  const { kept, hidden } = applyMemory(findings, memory);
+
   // 5. Gate
-  let gate = decide(findings, config.gate.rules);
+  let gate = decide(kept, config.gate.rules);
   // Si la IA se intentó y falló, no aprobamos "a ciegas": como mucho ADVERTENCIA.
   // No bloquea (una caída de Google no debe frenar al equipo), pero tampoco da luz verde.
   if (llmFailed && gate.decision === "APROBADO") {
@@ -119,14 +134,18 @@ export async function runReview(options: ReviewOptions): Promise<ReviewReport> {
     };
   }
 
-  return {
+  const report: ReviewReport = {
     decision: gate.decision,
     gate,
     changes: { description: changes.description, files: changes.files },
     checks: deterministic.checks,
-    findings: sortFindings(findings),
+    findings: sortFindings(kept),
+    dismissed: hidden,
     warnings,
     timings: [...timer.timings, timer.total()],
     llm,
   };
+  // Se guarda para que `guardian dismiss <id>` sepa a qué hallazgo se refiere el ID.
+  saveLastReview(root, report);
+  return report;
 }

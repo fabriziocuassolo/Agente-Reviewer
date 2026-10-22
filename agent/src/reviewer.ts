@@ -1,5 +1,7 @@
 import { z } from "zod";
 import type { ReviewContext } from "./context.js";
+import type { MemoryEntry } from "./memory.js";
+import type { Skill } from "./skills.js";
 import { LLMError, type LLMProvider } from "./llm/types.js";
 import { makeFindingId, SEVERITIES, type Finding } from "./types.js";
 
@@ -40,9 +42,29 @@ Severidades:
 Respondé SOLO con JSON, sin texto adicional, con este formato exacto:
 {"findings":[{"file":"src/ruta.ts","line":42,"severity":"alto","category":"precios","explanation":"...","suggestion":"..."}]}`;
 
-export function buildPrompt(context: ReviewContext): string {
+/** Conocimiento extra del equipo: skills aplicables y falsos positivos ya descartados. */
+export interface ReviewGuidance {
+  skills: Skill[];
+  exceptions: MemoryEntry[];
+}
+
+const NO_GUIDANCE: ReviewGuidance = { skills: [], exceptions: [] };
+
+export function buildPrompt(context: ReviewContext, guidance: ReviewGuidance = NO_GUIDANCE): string {
   const parts: string[] = [];
   if (context.conventions) parts.push(`## Convenciones del proyecto\n\n${context.conventions}`);
+  for (const skill of guidance.skills) {
+    parts.push(`## Criterios de revisión: ${skill.name}\n(aplica a: ${skill.matchedFiles.join(", ")})\n\n${skill.content}`);
+  }
+  if (guidance.exceptions.length > 0) {
+    const list = guidance.exceptions
+      .map((e) => `- [${e.category}] ${e.file ?? "(general)"}: "${e.pattern}" → descartado por el equipo: ${e.reason}`)
+      .join("\n");
+    parts.push(
+      "## Excepciones conocidas\nEl equipo ya marcó estos hallazgos como falsos positivos. " +
+        `NO los vuelvas a reportar, aunque los redactes distinto:\n${list}`,
+    );
+  }
   parts.push(`## Diff a revisar\n\n\`\`\`diff\n${context.diff}\n\`\`\``);
   for (const file of context.files) {
     parts.push(`## Archivo (${file.reason}): ${file.path}\n\n\`\`\`\n${file.content}\n\`\`\``);
@@ -71,9 +93,13 @@ export interface ReviewerResult {
  * - Si vuelve a fallar (o el proveedor falla) → se degrada: sin hallazgos de IA y con un aviso claro.
  *   La revisión nunca se cae por culpa del LLM.
  */
-export async function reviewWithLLM(provider: LLMProvider, context: ReviewContext): Promise<ReviewerResult> {
+export async function reviewWithLLM(
+  provider: LLMProvider,
+  context: ReviewContext,
+  guidance: ReviewGuidance = NO_GUIDANCE,
+): Promise<ReviewerResult> {
   const result: ReviewerResult = { findings: [], warnings: [], inputTokens: 0, outputTokens: 0, attempts: 0, degraded: false };
-  let prompt = buildPrompt(context);
+  let prompt = buildPrompt(context, guidance);
 
   for (let attempt = 1; attempt <= 2; attempt++) {
     result.attempts = attempt;
@@ -102,7 +128,7 @@ export async function reviewWithLLM(provider: LLMProvider, context: ReviewContex
     }
 
     // Reintento: le devolvemos el error de validación para que se corrija.
-    prompt = `${buildPrompt(context)}\n\n## Atención\nTu respuesta anterior no cumplía el formato (${parsed.error}). Respondé SOLO el JSON pedido.`;
+    prompt = `${buildPrompt(context, guidance)}\n\n## Atención\nTu respuesta anterior no cumplía el formato (${parsed.error}). Respondé SOLO el JSON pedido.`;
   }
 
   result.warnings.push("La IA devolvió una respuesta inválida dos veces.");
