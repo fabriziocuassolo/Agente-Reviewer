@@ -77,6 +77,7 @@ describe("reviewWithLLM", () => {
     const result = await reviewWithLLM(fakeProvider("{}", "{}"), context);
     expect(result.findings).toEqual([]);
     expect(result.warnings[0]).toMatch(/respuesta inválida dos veces/);
+    expect(result.degraded).toBe(true);
   });
 
   it("degrada con un aviso si el proveedor falla", async () => {

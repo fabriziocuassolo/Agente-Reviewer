@@ -1,0 +1,104 @@
+diff --git a/public/app.js b/public/app.js
+index f261751..d750a71 100644
+--- a/public/app.js
++++ b/public/app.js
+@@ -55,33 +55,24 @@ function renderCatalog(products) {
+ 
+   for (const product of products) {
+     const card = el("article", "card");
+-
+-    const image = el("div", "card-image", product.emoji);
+-    image.style.background = product.color;
+-    image.setAttribute("aria-hidden", "true");
+-
+-    const body = el("div", "card-body");
+-    body.append(
+-      el("span", "card-category", product.category),
+-      el("h3", "card-title", product.name),
+-      el("p", "card-description", product.description),
+-    );
+-
+-    const footer = el("div", "card-footer");
+-    const priceBox = el("div");
+-    priceBox.append(el("div", "price", formatCents(product.priceCents)));
+-    if (product.stock > 0 && product.stock <= 5) {
+-      priceBox.append(el("div", "stock-low", `¡Quedan ${product.stock}!`));
+-    }
+-
+-    const button = el("button", "button primary", product.stock > 0 ? "Agregar" : "Sin stock");
+-    button.type = "button";
+-    button.disabled = product.stock === 0;
+-    button.addEventListener("click", () => addToCart(product.id));
+-
+-    footer.append(priceBox, button);
+-    body.append(footer);
+-    card.append(image, body);
++    const lowStock = product.stock > 0 && product.stock <= 5 ? `<div class="stock-low">¡Quedan ${product.stock}!</div>` : "";
++
++    // Template más fácil de leer que tantos createElement
++    card.innerHTML = `
++      <div class="card-image" style="background:${product.color}" aria-hidden="true">${product.emoji}</div>
++      <div class="card-body">
++        <span class="card-category">${product.category}</span>
++        <h3 class="card-title">${product.name}</h3>
++        <p class="card-description">${product.description}</p>
++        <div class="card-footer">
++          <div><div class="price">${formatCents(product.priceCents)}</div>${lowStock}</div>
++          <button class="button primary" type="button" ${product.stock === 0 ? "disabled" : ""}>
++            ${product.stock > 0 ? "Agregar" : "Sin stock"}
++          </button>
++        </div>
++      </div>`;
++
++    card.querySelector("button").addEventListener("click", () => addToCart(product.id));
+     grid.append(card);
+   }
+ }
+diff --git a/src/routes/products.ts b/src/routes/products.ts
+index 06581b4..a204095 100644
+--- a/src/routes/products.ts
++++ b/src/routes/products.ts
+@@ -2,6 +2,7 @@ import { Router } from "express";
+ import { HttpError } from "../errors.js";
+ import type { Catalog } from "../services/catalog.js";
+ import type { Inventory } from "../services/inventory.js";
++import { fetchRelatedProducts } from "../services/recommendations.js";
+ 
+ export function productsRouter(catalog: Catalog, inventory: Inventory): Router {
+   const router = Router();
+@@ -14,6 +15,13 @@ export function productsRouter(catalog: Catalog, inventory: Inventory): Router {
+     res.json(products);
+   });
+ 
++  // GET /api/products/:id/related → productos recomendados
++  router.get("/:id/related", async (req, res) => {
++    if (!catalog.get(req.params.id)) throw new HttpError(404, "Producto no encontrado");
++    const ids = await fetchRelatedProducts(req.params.id);
++    res.json(ids.map((id) => catalog.get(id)).filter(Boolean));
++  });
++
+   // GET /api/products/:id → detalle de un producto
+   router.get("/:id", async (req, res) => {
+     const product = catalog.get(req.params.id);
+diff --git a/src/services/recommendations.ts b/src/services/recommendations.ts
+new file mode 100644
+index 0000000..54569d5
+--- /dev/null
++++ b/src/services/recommendations.ts
+@@ -0,0 +1,16 @@
++// Cliente del servicio de recomendaciones de productos (proveedor externo).
++const RECOMMENDATIONS_URL = "https://api.recomienda.example/v2/related";
++const RECOMMENDATIONS_API_KEY = "rk_prod_7Hq2LmX9vT4wZ8pR3sN6";
++
++export async function fetchRelatedProducts(productId: string): Promise<string[]> {
++  try {
++    const response = await fetch(`${RECOMMENDATIONS_URL}?product=${encodeURIComponent(productId)}`, {
++      headers: { Authorization: `Bearer ${RECOMMENDATIONS_API_KEY}` },
++    });
++    if (!response.ok) return [];
++    const data = (await response.json()) as { productIds?: string[] };
++    return data.productIds ?? [];
++  } catch {
++    return [];
++  }
++}

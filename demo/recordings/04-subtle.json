@@ -1,0 +1,14 @@
+{
+  "key": "04-subtle",
+  "provider": "gemini",
+  "model": "gemini-3.6-flash",
+  "recordedAt": "2026-10-22T23:05:05.448Z",
+  "promptHash": "e50016aafb2c2328",
+  "responses": [
+    {
+      "text": "{\n  \"findings\": [\n    {\n      \"file\": \"src/routes/products.ts\",\n      \"line\": 40,\n      \"severity\": \"critico\",\n      \"category\": \"asincronia\",\n      \"explanation\": \"La función `inventory.reserve` es asíncrona y devuelve una promesa. Al llamarla sin `await`, la respuesta 201 se envía antes de reservar el stock y cualquier error en la reserva no será capturado, lo que puede provocar que se vendan productos sin stock disponible.\",\n      \"suggestion\": \"await inventory.reserve(items);\"\n    }\n  ]\n}",
+      "inputTokens": 5126,
+      "outputTokens": 141
+    }
+  ]
+}

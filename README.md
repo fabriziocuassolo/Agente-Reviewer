@@ -18,5 +18,14 @@ npm test
 npm install
 npm link          # deja disponible el comando `guardian`
 cd <cualquier repo git>
-guardian review   # o: guardian review --json / --base main
+guardian review   # o: guardian review --json / --base main / --no-llm
 ```
+
+## Escenarios de demo
+
+```bash
+cp .env.example .env    # LLM_PROVIDER=replay: no necesita key
+npm run demo -- all
+```
+
+Ver [demo/README.md](demo/README.md).

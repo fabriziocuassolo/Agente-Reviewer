@@ -82,6 +82,29 @@
   - El reporte muestra tokens de entrada/salida: hace visible el costo de cada revisión.
   - El .env se carga desde la carpeta de Guardian, no del proyecto revisado. Las variables de
     entorno tienen prioridad (así la GitHub Action pasa la key como secret).
+
+  Fase 4 — Escenarios, replay y --record:
+  - Hallazgo clave al armar los escenarios: los tests de la tienda atrapaban los bugs "obvios"
+    (flotantes en calculateTotals, await faltante en checkout()) → el LLM nunca se llamaba.
+    Los escenarios 02 y 04 meten el bug en código SIN tests (rama mayorista ≥10 unidades,
+    ruta nueva de compra rápida): es justamente el caso realista donde la IA aporta valor.
+  - Escenario 03: el secreto lo bloquea el chequeo determinístico y, por la regla "crítico
+    determinístico → no se llama al LLM", la XSS no se reporta en esa pasada (aparecería al
+    sacar la key). Trade-off: menos costo vs. feedback en dos rondas. [decidir/defender]
+  - Replay: cada grabación guarda TODAS las respuestas de una revisión en orden (incluye
+    reintentos), indexada por nombre de escenario (o hash del prompt). Guarda el hash del
+    prompt y avisa si el código cambió desde que se grabó. Graba respuestas del modelo, no código.
+  - --record envuelve a cualquier proveedor real (patrón decorator): no toca Gemini ni Ollama.
+  - El demo copia la tienda a .demo-work/<escenario> DENTRO del repo (ignorado por git):
+    Node encuentra el node_modules de la raíz, así ESLint/tsc/vitest corren sin reinstalar.
+  - Cuota real de la capa gratuita: 20 requests/día por modelo (gemini-3.6-flash). Por eso:
+    el 429 no se reintenta (solo 500/503), y replay existe para no depender de la cuota.
+    01-clean quedó grabado con gemini-3.5-flash-lite porque se agotó la cuota de 3.6-flash.
+  - Si la IA se intentó y falló (caída, cuota, JSON inválido 2 veces), un APROBADO baja a
+    ADVERTENCIA (regla "ia-no-disponible"): no frena al equipo por una caída de Google,
+    pero tampoco da luz verde sin revisión. Con --no-llm explícito se mantiene APROBADO.
+  - Ollama: num_ctx 16384 explícito (por defecto Ollama recorta el prompt en silencio a 2-4k
+    tokens) y timeout mayor (180 s) porque un 7B en CPU es lento. No probado en esta máquina.
 -->
 
 ## 4. Cómo balanceé costo, tiempo, privacidad y operabilidad

@@ -1,0 +1,22 @@
+[
+  {
+    "id": "01-clean",
+    "title": "Filtro por categoría (cambio correcto, con validación y tests)",
+    "expected": ["APROBADO"]
+  },
+  {
+    "id": "02-pricing-float",
+    "title": "Descuento mayorista calculado con flotantes y cupón aplicado dos veces",
+    "expected": ["BLOQUEADO"]
+  },
+  {
+    "id": "03-security",
+    "title": "Tarjetas con innerHTML (XSS) y API key hardcodeada",
+    "expected": ["BLOQUEADO"]
+  },
+  {
+    "id": "04-subtle",
+    "title": "Compra rápida que reserva stock sin await",
+    "expected": ["ADVERTENCIA", "BLOQUEADO"]
+  }
+]

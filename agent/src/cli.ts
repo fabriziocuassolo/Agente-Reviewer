@@ -21,8 +21,9 @@ program
   .option("--base <ref>", "comparar contra esta rama o commit (por defecto se detecta solo)")
   .option("--json", "salida en JSON para máquinas (CI, GitHub Action)")
   .option("--no-llm", "solo chequeos determinísticos, sin llamar al modelo")
-  .action(async (options: { base?: string; json?: boolean; llm: boolean }) => {
-    const report = await runReview({ cwd: process.cwd(), base: options.base, llm: options.llm });
+  .option("--record", "graba las respuestas del modelo real en demo/recordings para el modo replay")
+  .action(async (options: { base?: string; json?: boolean; llm: boolean; record?: boolean }) => {
+    const report = await runReview({ cwd: process.cwd(), base: options.base, llm: options.llm, record: options.record });
     if (options.json) {
       console.log(JSON.stringify(report, null, 2));
     } else {

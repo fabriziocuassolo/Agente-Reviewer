@@ -2,9 +2,11 @@ import { LLMError, type LLMProvider, type LLMRequest, type LLMResponse } from ".
 
 const API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 
-// Errores transitorios (cuota por minuto, servicio saturado): vale la pena reintentar.
-const RETRYABLE_STATUS = new Set([429, 500, 503]);
-const MAX_ATTEMPTS = 3;
+// Errores transitorios (servicio saturado): vale la pena reintentar.
+// El 429 (cuota agotada) NO se reintenta: la capa gratuita tiene un límite diario
+// de requests y cada reintento lo consume sin chance de éxito.
+const RETRYABLE_STATUS = new Set([500, 503]);
+const MAX_ATTEMPTS = 4; // esperas de 2, 4 y 6 s entre intentos
 
 interface GeminiResponse {
   candidates?: { content?: { parts?: { text?: string; thought?: boolean }[] }; finishReason?: string }[];
@@ -45,7 +47,10 @@ export class GeminiProvider implements LLMProvider {
         await sleep(2000 * attempt);
         continue;
       }
-      throw new LLMError(`Gemini respondió ${response.status}: ${data.error?.message ?? response.statusText}`);
+      // Los mensajes de Google son largos: alcanza con la primera línea.
+      const message = (data.error?.message ?? response.statusText).split("\n")[0].trim();
+      const hint = response.status === 429 ? " (límite de la capa gratuita; probá más tarde, otro GEMINI_MODEL o LLM_PROVIDER=replay)" : "";
+      throw new LLMError(`Gemini respondió ${response.status}: ${message}${hint}`);
     }
   }
 

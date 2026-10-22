@@ -1,0 +1,63 @@
+diff --git a/public/index.html b/public/index.html
+index 4fc7cdc..9ad264a 100644
+--- a/public/index.html
++++ b/public/index.html
+@@ -17,7 +17,8 @@
+     <main class="container">
+       <section class="hero">
+         <h1>Objetos simples para la casa</h1>
+-        <p>Envío gratis en compras desde $50. Probá el cupón <strong>BIENVENIDA10</strong>.</p>
++        <p>Envío gratis en compras desde $50. Probá el cupón <strong>BIENVENIDA10</strong>.
++          ¡Nuevo! 7,5% de descuento llevando 10 unidades o más.</p>
+       </section>
+ 
+       <div id="catalog-toolbar" class="toolbar"></div>
+diff --git a/src/services/pricing.ts b/src/services/pricing.ts
+index e882642..d274692 100644
+--- a/src/services/pricing.ts
++++ b/src/services/pricing.ts
+@@ -7,6 +7,10 @@ import { calculateDiscount } from "./discounts.js";
+ export const FREE_SHIPPING_THRESHOLD_CENTS = 5000;
+ export const SHIPPING_COST_CENTS = 499;
+ 
++// Descuento mayorista: 7,5% en las líneas de 10 unidades o más.
++export const BULK_MIN_QUANTITY = 10;
++export const BULK_DISCOUNT = 0.075;
++
+ /** Resuelve los ítems del carrito contra el catálogo. Ignora productos inexistentes. */
+ export function buildLines(items: CartItem[], catalog: Catalog): CartLine[] {
+   const lines: CartLine[] = [];
+@@ -34,13 +38,32 @@ export function calculateShipping(subtotalCents: number, coupon: Coupon | null):
+   return subtotalCents >= FREE_SHIPPING_THRESHOLD_CENTS ? 0 : SHIPPING_COST_CENTS;
+ }
+ 
++/**
++ * Subtotal con precio mayorista. Trabajamos en pesos para que la cuenta
++ * del 7,5% quede más clara y después volvemos a centavos.
++ */
++export function calculateBulkSubtotal(lines: CartLine[], coupon: Coupon | null): number {
++  let total = 0;
++  for (const line of lines) {
++    let unitPrice = line.unitPriceCents / 100;
++    if (line.quantity >= BULK_MIN_QUANTITY) {
++      unitPrice = unitPrice * (1 - BULK_DISCOUNT);
++    }
++    total += unitPrice * line.quantity;
++  }
++  // El cupón también vale para compras mayoristas
++  const totalCents = total * 100;
++  return totalCents - calculateDiscount(totalCents, coupon);
++}
++
+ /**
+  * Calcula los totales del carrito.
+  * El descuento se aplica UNA sola vez sobre el subtotal; el envío se calcula
+  * sobre el subtotal original (un cupón no te hace perder el envío gratis).
+  */
+ export function calculateTotals(lines: CartLine[], coupon: Coupon | null): Totals {
+-  const subtotalCents = calculateSubtotal(lines);
++  const isBulk = lines.some((line) => line.quantity >= BULK_MIN_QUANTITY);
++  const subtotalCents = isBulk ? calculateBulkSubtotal(lines, coupon) : calculateSubtotal(lines);
+   const discountCents = calculateDiscount(subtotalCents, coupon);
+   const shippingCents = calculateShipping(subtotalCents, coupon);
+   return {

@@ -1,0 +1,166 @@
+diff --git a/public/app.js b/public/app.js
+index f261751..990b8dd 100644
+--- a/public/app.js
++++ b/public/app.js
+@@ -6,6 +6,7 @@
+ const state = {
+   products: [],
+   cart: null,
++  category: null,
+ };
+ 
+ const $ = (id) => document.getElementById(id);
+@@ -87,10 +88,40 @@ function renderCatalog(products) {
+ }
+ 
+ async function loadProducts() {
+-  state.products = await api("/api/products");
++  const query = state.category ? `?category=${encodeURIComponent(state.category)}` : "";
++  state.products = await api(`/api/products${query}`);
+   renderCatalog(state.products);
+ }
+ 
++// ---------- Filtro por categoría ----------
++
++const CATEGORY_LABELS = { cocina: "Cocina", almacen: "Almacén", hogar: "Hogar" };
++
++function renderCategoryFilter(categories) {
++  const toolbar = $("catalog-toolbar");
++  toolbar.replaceChildren();
++  for (const category of [null, ...categories]) {
++    const chip = el("button", "chip", category ? CATEGORY_LABELS[category] || category : "Todo");
++    chip.type = "button";
++    chip.classList.toggle("active", state.category === category);
++    chip.setAttribute("aria-pressed", String(state.category === category));
++    chip.addEventListener("click", async () => {
++      state.category = category;
++      renderCategoryFilter(categories);
++      try {
++        await loadProducts();
++      } catch (error) {
++        toast(error.message, true);
++      }
++    });
++    toolbar.append(chip);
++  }
++}
++
++async function loadCategories() {
++  renderCategoryFilter(await api("/api/products/categories"));
++}
++
+ // ---------- Carrito ----------
+ 
+ async function ensureCart() {
+@@ -262,7 +293,7 @@ function bindEvents() {
+ async function init() {
+   bindEvents();
+   try {
+-    await Promise.all([loadProducts(), ensureCart()]);
++    await Promise.all([loadProducts(), loadCategories(), ensureCart()]);
+     renderCart();
+   } catch (error) {
+     toast(`No se pudo cargar la tienda: ${error.message}`, true);
+diff --git a/src/routes/products.ts b/src/routes/products.ts
+index 06581b4..1cf7053 100644
+--- a/src/routes/products.ts
++++ b/src/routes/products.ts
+@@ -2,18 +2,25 @@ import { Router } from "express";
+ import { HttpError } from "../errors.js";
+ import type { Catalog } from "../services/catalog.js";
+ import type { Inventory } from "../services/inventory.js";
++import { parse, productQuerySchema } from "../validation.js";
+ 
+ export function productsRouter(catalog: Catalog, inventory: Inventory): Router {
+   const router = Router();
+ 
+-  // GET /api/products → catálogo completo con el stock actual
+-  router.get("/", async (_req, res) => {
++  // GET /api/products?category=cocina → catálogo (opcionalmente filtrado) con el stock actual
++  router.get("/", async (req, res) => {
++    const { category } = parse(productQuerySchema, req.query);
+     const products = await Promise.all(
+-      catalog.list().map(async (p) => ({ ...p, stock: await inventory.available(p.id) })),
++      catalog.list(category).map(async (p) => ({ ...p, stock: await inventory.available(p.id) })),
+     );
+     res.json(products);
+   });
+ 
++  // GET /api/products/categories → categorías para armar el filtro
++  router.get("/categories", (_req, res) => {
++    res.json(catalog.categories());
++  });
++
+   // GET /api/products/:id → detalle de un producto
+   router.get("/:id", async (req, res) => {
+     const product = catalog.get(req.params.id);
+diff --git a/src/services/catalog.ts b/src/services/catalog.ts
+index 7a749e6..4d233ec 100644
+--- a/src/services/catalog.ts
++++ b/src/services/catalog.ts
+@@ -16,8 +16,15 @@ export class Catalog {
+     this.byId = new Map(products.map((p) => [p.id, p]));
+   }
+ 
+-  list(): Product[] {
+-    return this.products;
++  /** Lista los productos; si se pasa una categoría, solo los de esa categoría. */
++  list(category?: string): Product[] {
++    if (!category) return this.products;
++    return this.products.filter((p) => p.category === category);
++  }
++
++  /** Categorías disponibles, sin repetir y ordenadas alfabéticamente. */
++  categories(): string[] {
++    return [...new Set(this.products.map((p) => p.category))].sort();
+   }
+ 
+   get(id: string): Product | undefined {
+diff --git a/src/validation.ts b/src/validation.ts
+index 513dcf8..47cd4c8 100644
+--- a/src/validation.ts
++++ b/src/validation.ts
+@@ -12,6 +12,10 @@ export const addItemSchema = z.object({
+ 
+ export const updateItemSchema = z.object({ quantity });
+ 
++export const productQuerySchema = z.object({
++  category: z.string().trim().toLowerCase().min(1).max(40).optional(),
++});
++
+ export const couponSchema = z.object({
+   code: z.string().trim().min(1).max(40),
+ });
+diff --git a/tests/catalog.test.ts b/tests/catalog.test.ts
+new file mode 100644
+index 0000000..88aca9d
+--- /dev/null
++++ b/tests/catalog.test.ts
+@@ -0,0 +1,27 @@
++import { describe, expect, it } from "vitest";
++import { Catalog } from "../src/services/catalog.js";
++import type { Product } from "../src/types.js";
++
++function product(id: string, category: string): Product {
++  return { id, name: id, description: "", category, priceCents: 100, stock: 1, emoji: "", color: "" };
++}
++
++const catalog = new Catalog([product("a", "hogar"), product("b", "cocina"), product("c", "hogar")]);
++
++describe("Catalog", () => {
++  it("lista todo si no se pide categoría", () => {
++    expect(catalog.list().map((p) => p.id)).toEqual(["a", "b", "c"]);
++  });
++
++  it("filtra por categoría", () => {
++    expect(catalog.list("hogar").map((p) => p.id)).toEqual(["a", "c"]);
++  });
++
++  it("devuelve una lista vacía para una categoría inexistente", () => {
++    expect(catalog.list("jardin")).toEqual([]);
++  });
++
++  it("lista las categorías sin repetir y ordenadas", () => {
++    expect(catalog.categories()).toEqual(["cocina", "hogar"]);
++  });
++});

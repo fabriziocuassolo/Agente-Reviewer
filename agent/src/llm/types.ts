@@ -8,6 +8,8 @@ export interface LLMResponse {
   /** Tokens consumidos, si el proveedor los informa (para estimar costo). */
   inputTokens?: number;
   outputTokens?: number;
+  /** Aviso del proveedor para mostrar al usuario (ej: grabación desactualizada). */
+  notice?: string;
 }
 
 /**

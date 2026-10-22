@@ -61,6 +61,10 @@ export interface LLMUsage {
   redactions: number;
   /** Archivos que no se enviaron (ignorados, binarios o por tamaño). */
   omitted: string[];
+  /** true si la llamada falló y no hubo revisión de IA. */
+  failed: boolean;
+  /** Archivo donde se guardó la grabación (solo con --record). */
+  recordedTo?: string;
 }
 
 /** Error "esperado" (configuración inválida, no es un repo, etc.): se muestra sin stack trace. */

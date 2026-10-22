@@ -79,12 +79,14 @@ function renderFinding(f: Finding): string[] {
 
 function renderLLM({ llm }: ReviewReport): string {
   if (!llm) return "";
+  if (llm.failed) return `IA: ${llm.provider} · ${llm.model} · sin revisión (ver aviso)`;
   const lines = [
     `IA: ${llm.provider} · ${llm.model} · ${formatTokens(llm.inputTokens)} tokens de entrada / ${formatTokens(llm.outputTokens)} de salida` +
       (llm.attempts > 1 ? ` · ${llm.attempts} intentos` : ""),
   ];
   if (llm.redactions > 0) lines.push(`Privacidad: ${llm.redactions} secreto(s) redactado(s) antes de enviar el código`);
   if (llm.omitted.length > 0) lines.push(`No enviados al modelo: ${llm.omitted.join(", ")}`);
+  if (llm.recordedTo) lines.push(`Grabación guardada en: ${llm.recordedTo}`);
   return lines.join("\n");
 }
 

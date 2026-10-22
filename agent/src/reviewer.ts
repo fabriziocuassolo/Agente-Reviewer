@@ -61,6 +61,8 @@ export interface ReviewerResult {
   inputTokens: number;
   outputTokens: number;
   attempts: number;
+  /** true si la IA no pudo revisar (error del proveedor o respuesta inválida). */
+  degraded: boolean;
 }
 
 /**
@@ -70,7 +72,7 @@ export interface ReviewerResult {
  *   La revisión nunca se cae por culpa del LLM.
  */
 export async function reviewWithLLM(provider: LLMProvider, context: ReviewContext): Promise<ReviewerResult> {
-  const result: ReviewerResult = { findings: [], warnings: [], inputTokens: 0, outputTokens: 0, attempts: 0 };
+  const result: ReviewerResult = { findings: [], warnings: [], inputTokens: 0, outputTokens: 0, attempts: 0, degraded: false };
   let prompt = buildPrompt(context);
 
   for (let attempt = 1; attempt <= 2; attempt++) {
@@ -79,11 +81,13 @@ export async function reviewWithLLM(provider: LLMProvider, context: ReviewContex
     try {
       const response = await provider.complete({ system: SYSTEM_PROMPT, prompt });
       text = response.text;
+      if (response.notice) result.warnings.push(response.notice);
       result.inputTokens += response.inputTokens ?? 0;
       result.outputTokens += response.outputTokens ?? 0;
     } catch (error) {
-      const message = error instanceof LLMError ? error.message : String(error);
-      result.warnings.push(`Revisión con IA no disponible: ${message}. Se decide solo con los chequeos determinísticos.`);
+      const message = (error instanceof LLMError ? error.message : String(error)).replace(/\.+$/, "");
+      result.warnings.push(`Revisión con IA no disponible: ${message}.`);
+      result.degraded = true;
       return result;
     }
 
@@ -101,9 +105,8 @@ export async function reviewWithLLM(provider: LLMProvider, context: ReviewContex
     prompt = `${buildPrompt(context)}\n\n## Atención\nTu respuesta anterior no cumplía el formato (${parsed.error}). Respondé SOLO el JSON pedido.`;
   }
 
-  result.warnings.push(
-    "La IA devolvió una respuesta inválida dos veces. Se decide solo con los chequeos determinísticos.",
-  );
+  result.warnings.push("La IA devolvió una respuesta inválida dos veces.");
+  result.degraded = true;
   return result;
 }
 
