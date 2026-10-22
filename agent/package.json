@@ -1,0 +1,26 @@
+{
+  "name": "guardian-agent",
+  "version": "0.1.0",
+  "private": true,
+  "description": "CLI guardian: revisión de código con chequeos determinísticos + agente LLM",
+  "type": "module",
+  "bin": {
+    "guardian": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "commander": "^15.0.0",
+    "ignore": "^7.0.13",
+    "picocolors": "^1.1.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "typescript": "^6.0.3",
+    "vitest": "^5.0.5"
+  }
+}

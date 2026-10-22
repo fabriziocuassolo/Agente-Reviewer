@@ -37,6 +37,24 @@
     sin await no los atrapa el linter → justamente es lo que debe encontrar el agente LLM.
   - Node 22 LTS (el requisito mínimo declarado es Node 20).
   - `.gitattributes` fuerza LF para que los patches de demo apliquen igual en Windows y Unix.
+
+  Fase 2 — CLI y chequeos determinísticos:
+  - `child_process` (execFileSync con git) en vez de simple-git: una dependencia menos y
+    los comandos git quedan visibles/explicables en el código.
+  - Qué se revisa (git.ts): --base explícito > cambios sin commitear vs HEAD > commits de la
+    rama vs main (caso pre-push). Los archivos nuevos sin trackear se incluyen con un diff sintético.
+  - Detector de secretos por regex solo sobre líneas AGREGADAS del diff (no castiga código viejo).
+    El reporte enmascara el valor (primeros 4 caracteres) para no volver a filtrarlo en logs de CI.
+  - Lint/tipos/tests se autodetectan desde package.json y se pueden sobreescribir o desactivar
+    (null) en .guardian/config.json. Corren EN PARALELO: el costo de tiempo es el del más lento.
+  - Severidades fijas de los chequeos: tipos y tests rotos = crítico (bloquea); lint = alto.
+  - Gate como lista ordenada de reglas {severidad, mínimo, decisión}. Las de BLOQUEADO se
+    evalúan primero (gana la más estricta). La respuesta siempre dice qué regla se aplicó.
+    Alternativa descartada: que el LLM decida → no auditable ni reproducible.
+  - IDs de hallazgo = hash del contenido SIN número de línea, para que `dismiss` sobreviva
+    a que el código se mueva.
+  - Exit codes: 0 aprobado/advertencia, 1 bloqueado, 2 error de la herramienta.
+  - La config se valida con zod y los errores se muestran con la ruta exacta del campo.
 -->
 
 ## 4. Cómo balanceé costo, tiempo, privacidad y operabilidad

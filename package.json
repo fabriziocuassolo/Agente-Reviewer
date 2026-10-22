@@ -7,10 +7,16 @@
     "node": ">=20"
   },
   "workspaces": [
+    "agent",
     "storefront-demo"
   ],
   "scripts": {
+    "build": "npm run build --workspace agent",
+    "prepare": "npm run build --workspace agent",
     "store": "npm run start --workspace storefront-demo",
     "test": "npm run test --workspaces --if-present"
+  },
+  "bin": {
+    "guardian": "agent/dist/cli.js"
   }
 }
