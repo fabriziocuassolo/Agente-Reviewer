@@ -44,6 +44,8 @@ export function renderReport(report: ReviewReport): string {
     out.push(pc.green("Sin hallazgos."), "");
   }
 
+  if (report.llm) out.push(pc.dim(renderLLM(report)), "");
+
   for (const warning of report.warnings) out.push(pc.yellow(`⚠ ${warning}`));
   if (report.warnings.length > 0) out.push("");
 
@@ -73,6 +75,21 @@ function renderFinding(f: Finding): string[] {
   for (const extra of rest) lines.push(pc.dim(`      ${extra}`));
   lines.push(`    ${pc.green("→")} ${f.suggestion}`);
   return lines;
+}
+
+function renderLLM({ llm }: ReviewReport): string {
+  if (!llm) return "";
+  const lines = [
+    `IA: ${llm.provider} · ${llm.model} · ${formatTokens(llm.inputTokens)} tokens de entrada / ${formatTokens(llm.outputTokens)} de salida` +
+      (llm.attempts > 1 ? ` · ${llm.attempts} intentos` : ""),
+  ];
+  if (llm.redactions > 0) lines.push(`Privacidad: ${llm.redactions} secreto(s) redactado(s) antes de enviar el código`);
+  if (llm.omitted.length > 0) lines.push(`No enviados al modelo: ${llm.omitted.join(", ")}`);
+  return lines.join("\n");
+}
+
+function formatTokens(n: number): string {
+  return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
 }
 
 function renderTimings(timings: StageTiming[]): string {

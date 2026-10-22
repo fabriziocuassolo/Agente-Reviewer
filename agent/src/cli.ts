@@ -1,9 +1,12 @@
 #!/usr/bin/env node
 import { Command } from "commander";
 import pc from "picocolors";
+import { loadGuardianEnv } from "./env.js";
 import { renderReport } from "./report.js";
 import { runReview } from "./review.js";
 import { GuardianError } from "./types.js";
+
+loadGuardianEnv();
 
 const program = new Command();
 
@@ -17,8 +20,9 @@ program
   .description("Revisa los cambios actuales y decide si están listos: APROBADO / ADVERTENCIA / BLOQUEADO")
   .option("--base <ref>", "comparar contra esta rama o commit (por defecto se detecta solo)")
   .option("--json", "salida en JSON para máquinas (CI, GitHub Action)")
-  .action(async (options: { base?: string; json?: boolean }) => {
-    const report = await runReview({ cwd: process.cwd(), base: options.base });
+  .option("--no-llm", "solo chequeos determinísticos, sin llamar al modelo")
+  .action(async (options: { base?: string; json?: boolean; llm: boolean }) => {
+    const report = await runReview({ cwd: process.cwd(), base: options.base, llm: options.llm });
     if (options.json) {
       console.log(JSON.stringify(report, null, 2));
     } else {

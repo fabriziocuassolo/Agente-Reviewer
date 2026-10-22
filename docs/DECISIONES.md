@@ -55,6 +55,33 @@
     a que el código se mueva.
   - Exit codes: 0 aprobado/advertencia, 1 bloqueado, 2 error de la herramienta.
   - La config se valida con zod y los errores se muestran con la ruta exacta del campo.
+
+  Fase 3 — Adapter de LLM y agente revisor:
+  - Interfaz `LLMProvider` mínima (complete(system, prompt) → texto + tokens). El revisor no
+    sabe qué proveedor usa: Gemini, Ollama y replay son intercambiables.
+  - Gemini vía REST con fetch, sin SDK: una dependencia menos y se ve exactamente qué se envía.
+    La key va en header (x-goog-api-key), nunca en la URL. Modo JSON nativo (responseMimeType).
+  - Reintentos solo ante errores transitorios (429/500/503) con espera creciente; timeout con
+    AbortSignal (LLM_TIMEOUT_MS).
+  - Elección del modelo por medición, no por suposición (ver comentario en llm/provider.ts):
+    3.8-flash era el mejor pero estaba saturado (~60-80 s); 3.5-flash-lite tardaba ~2 s pero
+    explicó mal el bug y bajó la severidad; 3.6-flash (~11 s) es el equilibrio. Configurable.
+  - Si los chequeos determinísticos ya encontraron un crítico, NO se llama al LLM: ya está
+    bloqueado, gastar tokens y 10 s no cambia la decisión. Primero hay que arreglar eso.
+  - Contexto por prioridad con presupuesto en caracteres (config.context.maxChars, ~4 chars/token):
+    convenciones → diff → archivos modificados → imports directos (1 nivel). Lo que no entra
+    se informa como "no enviado". Archivos con números de línea para que el modelo cite bien.
+  - Redacción de secretos sobre TODO el contexto (no solo líneas nuevas) antes de que salga
+    de la máquina. Siempre se excluyen .env*, node_modules, dist, binarios y lockfiles,
+    más lo que diga .guardianignore (paquete `ignore`, misma sintaxis que .gitignore).
+  - El ID del hallazgo lo genera Guardian (hash), no el modelo: estable y sin colisiones.
+  - Validación con zod de la respuesta. Si es inválida, 1 reintento devolviéndole el error al
+    modelo; si vuelve a fallar → degradación: decide solo lo determinístico + aviso visible.
+    La revisión nunca se cae por culpa del LLM.
+  - Hallazgos que citan archivos fuera del cambio se descartan (control de alucinaciones).
+  - El reporte muestra tokens de entrada/salida: hace visible el costo de cada revisión.
+  - El .env se carga desde la carpeta de Guardian, no del proyecto revisado. Las variables de
+    entorno tienen prioridad (así la GitHub Action pasa la key como secret).
 -->
 
 ## 4. Cómo balanceé costo, tiempo, privacidad y operabilidad

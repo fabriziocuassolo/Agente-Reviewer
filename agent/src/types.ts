@@ -47,6 +47,20 @@ export interface ReviewReport {
   findings: Finding[];
   warnings: string[];
   timings: StageTiming[];
+  /** Datos de la llamada al LLM, si se hizo. */
+  llm?: LLMUsage;
+}
+
+export interface LLMUsage {
+  provider: string;
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  attempts: number;
+  /** Secretos reemplazados en el contexto antes de enviarlo. */
+  redactions: number;
+  /** Archivos que no se enviaron (ignorados, binarios o por tamaño). */
+  omitted: string[];
 }
 
 /** Error "esperado" (configuración inválida, no es un repo, etc.): se muestra sin stack trace. */

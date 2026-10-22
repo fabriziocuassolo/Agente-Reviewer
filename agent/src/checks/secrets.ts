@@ -49,6 +49,28 @@ export function findSecrets(addedLines: Map<string, AddedLine[]>): SecretMatch[]
   return matches;
 }
 
+export const REDACTED = "[SECRETO REDACTADO]";
+
+/**
+ * Reemplaza en un texto todo lo que parezca un secreto, antes de enviarlo al LLM.
+ * Se aplica a TODO el contexto (no solo a las líneas nuevas): un archivo viejo
+ * también puede tener una key que no queremos mandar a un tercero.
+ */
+export function redactSecrets(text: string): { text: string; count: number } {
+  let count = 0;
+  let result = text;
+  for (const pattern of PATTERNS) {
+    const global = new RegExp(pattern.regex.source, pattern.regex.flags + "g");
+    result = result.replace(global, (match: string, group?: string) => {
+      const value = typeof group === "string" ? group : match;
+      if (PLACEHOLDER.test(value)) return match;
+      count++;
+      return match.replace(value, REDACTED);
+    });
+  }
+  return { text: result, count };
+}
+
 /** Muestra solo el principio del secreto para que el reporte no lo vuelva a filtrar. */
 export function maskSecret(value: string): string {
   return `${value.slice(0, 4)}… (${value.length} caracteres)`;

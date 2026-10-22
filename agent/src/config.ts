@@ -34,6 +34,7 @@ const userConfigSchema = z.object({
     })
     .optional(),
   gate: z.object({ rules: z.array(ruleSchema).min(1).optional() }).optional(),
+  context: z.object({ maxChars: z.number().int().min(1000).optional() }).optional(),
 });
 
 export interface GuardianConfig {
@@ -45,6 +46,8 @@ export interface GuardianConfig {
     timeoutMs: number;
   };
   gate: { rules: GateRule[] };
+  /** Tope de caracteres enviados al LLM (~4 caracteres por token). Controla costo y latencia. */
+  context: { maxChars: number };
 }
 
 // Reglas por defecto del gate, tal como pide la consigna.
@@ -59,6 +62,7 @@ export const DEFAULT_CONFIG: GuardianConfig = {
   baseBranch: "main",
   checks: { timeoutMs: 180_000 },
   gate: { rules: DEFAULT_RULES },
+  context: { maxChars: 80_000 },
 };
 
 /** Lee .guardian/config.json del repo (si existe) y lo combina con los valores por defecto. */
@@ -84,5 +88,6 @@ export function loadConfig(repoRoot: string): GuardianConfig {
     baseBranch: user.baseBranch ?? DEFAULT_CONFIG.baseBranch,
     checks: { ...DEFAULT_CONFIG.checks, ...user.checks },
     gate: { rules: user.gate?.rules ?? DEFAULT_RULES },
+    context: { maxChars: user.context?.maxChars ?? DEFAULT_CONFIG.context.maxChars },
   };
 }
