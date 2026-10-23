@@ -10,7 +10,20 @@ en una PC con Ryzen 7 7800X3D, 32 GB de RAM y RTX 5080 (16 GB).
 
 ### Elegir el proveedor
 
-Abrí el archivo `.env` (en la raíz del proyecto) y dejá **una** de estas configuraciones:
+La forma más simple: agregá `--use` a cualquier comando. No hace falta tocar archivos.
+
+```powershell
+guardian ia                                            # qué hay instalado y listo
+guardian review --use local --model qwen2.5-coder:14b  # Ollama 14B
+guardian review --use local                            # Ollama 7B (el modelo por defecto)
+guardian review --use ia                               # Gemini
+npm run demo -- all --use local --model qwen2.5-coder:14b
+```
+
+Si la IA elegida no está lista (falta la key de Gemini, Ollama cerrado o sin el modelo), Guardian
+corta y te explica qué hacer.
+
+Para cambiar la IA **por defecto**, abrí el archivo `.env` (en la raíz del proyecto) y dejá **una** de estas configuraciones:
 
 ```
 # Opción 1: Ollama, modelo grande (recomendado si tu placa de video tiene 12 GB o más)
@@ -246,14 +259,12 @@ guardian ask "¿Cómo se calcula el costo de envío?"
 
 ## 4. Comparar proveedores con el mismo caso
 
-Podés cambiar el modelo solo para un comando, sin editar el `.env`.
+Corré el mismo cambio con cada IA, sin editar el `.env`:
 
-**PowerShell:**
 ```powershell
-$env:OLLAMA_MODEL="qwen2.5-coder:7b";  guardian review
-$env:OLLAMA_MODEL="qwen2.5-coder:14b"; guardian review
-$env:LLM_PROVIDER="gemini";            guardian review
-Remove-Item Env:LLM_PROVIDER, Env:OLLAMA_MODEL   # vuelve a lo del .env
+guardian review --use local --model qwen2.5-coder:7b
+guardian review --use local --model qwen2.5-coder:14b
+guardian review --use ia
 ```
 
 Fijate en la línea `IA: ...` del reporte: muestra proveedor, modelo y tokens usados.

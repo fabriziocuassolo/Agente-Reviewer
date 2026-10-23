@@ -111,7 +111,7 @@ describe("ask", () => {
   it("explica que replay no sirve para preguntas", async () => {
     const { provider } = spyProvider();
     await expect(ask("¿Cómo funciona el carrito?", { cwd: ".", provider: { ...provider, name: "replay" } })).rejects.toThrow(
-      /modelo real/,
+      /IA real/,
     );
   });
 });

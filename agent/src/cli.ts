@@ -5,12 +5,17 @@ import { ask } from "./ask.js";
 import { loadGuardianEnv } from "./env.js";
 import { getRepoRoot } from "./git.js";
 import { installHook, uninstallHook } from "./hook.js";
+import { providersStatus } from "./llm/provider.js";
 import { dismissFinding, MEMORY_PATH } from "./memory.js";
 import { renderReport } from "./report.js";
 import { runReview } from "./review.js";
 import { GuardianError } from "./types.js";
 
 loadGuardianEnv();
+
+const USE_HELP =
+  "IA a usar: replay (grabada, por defecto) | gemini o ia (nube) | ollama o local (en tu máquina). " +
+  "Si no está lista, te explica cómo configurarla";
 
 const program = new Command();
 
@@ -27,13 +32,17 @@ program
   .option("--no-llm", "solo chequeos determinísticos, sin llamar al modelo")
   .option("--record", "graba las respuestas del modelo real en demo/recordings para el modo replay")
   .option("--pre-push", "revisa solo los commits (no los cambios sin commitear); lo usa el hook")
-  .action(async (options: { base?: string; json?: boolean; llm: boolean; record?: boolean; prePush?: boolean }) => {
+  .option("--use <ia>", USE_HELP)
+  .option("--model <nombre>", "modelo a usar con esa IA (ej: qwen2.5-coder:14b, gemini-3.8-flash)")
+  .action(async (options: { base?: string; json?: boolean; llm: boolean; record?: boolean; prePush?: boolean; use?: string; model?: string }) => {
     const report = await runReview({
       cwd: process.cwd(),
       base: options.base,
       llm: options.llm,
       record: options.record,
       committedOnly: options.prePush,
+      use: options.use,
+      model: options.model,
     });
     if (options.json) {
       console.log(JSON.stringify(report, null, 2));
@@ -61,15 +70,32 @@ program
   .command("ask")
   .description("Responde preguntas sobre el código del proyecto citando archivos y líneas")
   .argument("<pregunta>", "tu pregunta sobre el código")
-  .action(async (question: string) => {
+  .option("--use <ia>", "gemini (o ia) | ollama (o local)")
+  .option("--model <nombre>", "modelo a usar con esa IA")
+  .action(async (question: string, options: { use?: string; model?: string }) => {
     const started = Date.now();
-    const result = await ask(question, { cwd: process.cwd() });
+    const result = await ask(question, { cwd: process.cwd(), use: options.use, model: options.model });
     console.log(`\n${result.answer}\n`);
     if (result.sources.length > 0) {
       console.log(pc.dim(`Archivos consultados: ${result.sources.join(", ")}`));
     }
     const tokens = result.inputTokens ? ` · ${result.inputTokens} tokens de entrada / ${result.outputTokens ?? 0} de salida` : "";
     console.log(pc.dim(`Tiempo: ${((Date.now() - started) / 1000).toFixed(1)} s${tokens}\n`));
+  });
+
+program
+  .command("ia")
+  .description("Muestra qué IA está activa y si cada opción (replay, gemini, ollama) está lista")
+  .action(async () => {
+    const statuses = await providersStatus();
+    console.log(pc.bold("\nIA para las revisiones\n"));
+    for (const s of statuses) {
+      const icon = s.ready ? pc.green("✔") : pc.yellow("–");
+      const active = s.active ? pc.cyan(" ← activa por defecto") : "";
+      console.log(`  ${icon} ${pc.bold(s.name.padEnd(7))}${active}\n      ${pc.dim(s.detail)}`);
+    }
+    console.log(pc.dim("\nCambiala para un comando:   guardian review --use gemini   |   --use ollama   |   --use replay"));
+    console.log(pc.dim("Cambiala por defecto:       LLM_PROVIDER=... en el archivo .env de Guardian\n"));
   });
 
 program

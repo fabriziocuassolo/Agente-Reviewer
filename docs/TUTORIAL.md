@@ -58,9 +58,15 @@ LLM_PROVIDER=replay
 
 Esto significa que va a usar respuestas pregrabadas (modo **replay**), que funciona sin API key y sin conexión a internet.
 
-**Alternativas:**
-- Si querés un modelo local privado, cambiá a `LLM_PROVIDER=ollama` (requiere instalar Ollama primero).
-- Si querés un modelo en la nube, cambiá a `LLM_PROVIDER=gemini` y agregá tu `GEMINI_API_KEY` (gratis en https://aistudio.google.com/apikey).
+**Para usar otra IA no hace falta tocar el archivo:** agregá `--use` al comando.
+
+```bash
+guardian review --use ia      # Gemini, en la nube
+guardian review --use local   # Ollama, en tu máquina
+guardian ia                   # muestra qué IA está activa y cuáles están listas
+```
+
+Si elegís una IA que todavía no configuraste, Guardian te explica paso a paso qué hacer: dónde sacar la key de Gemini o cómo instalar Ollama.
 
 Para este tutorial dejalo en `replay`.
 

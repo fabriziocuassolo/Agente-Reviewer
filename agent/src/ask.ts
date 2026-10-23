@@ -3,7 +3,7 @@ import { basename, extname, join } from "node:path";
 import type { Ignore } from "ignore";
 import { redactSecrets } from "./checks/secrets.js";
 import { createIgnoreFilter } from "./context.js";
-import { createProvider } from "./llm/provider.js";
+import { prepareProvider } from "./llm/provider.js";
 import { LLMError, type LLMProvider } from "./llm/types.js";
 import { GuardianError } from "./types.js";
 
@@ -31,6 +31,10 @@ const STOPWORDS = new Set([
 export interface AskOptions {
   cwd: string;
   provider?: LLMProvider | null;
+  /** IA elegida desde la terminal (--use gemini|ollama). */
+  use?: string;
+  /** Modelo elegido desde la terminal (--model). */
+  model?: string;
 }
 
 export interface AskResult {
@@ -149,12 +153,18 @@ export async function ask(question: string, options: AskOptions): Promise<AskRes
   if (!question.trim()) throw new GuardianError("Escribí una pregunta.");
 
   const { provider, reason } =
-    options.provider !== undefined ? { provider: options.provider, reason: "proveedor no disponible" } : createProvider();
+    options.provider !== undefined
+      ? { provider: options.provider, reason: "proveedor no disponible" }
+      : await prepareProvider(process.env, { use: options.use, model: options.model });
   if (!provider) {
-    throw new GuardianError(`Para responder preguntas hace falta un modelo: ${reason}.`);
+    throw new GuardianError(`Para responder preguntas hace falta una IA.\n${reason}`);
   }
   if (provider.name === "replay") {
-    throw new GuardianError("`ask` necesita un modelo real (LLM_PROVIDER=gemini u ollama): replay solo reproduce las revisiones de la demo.");
+    throw new GuardianError(
+      "`ask` necesita una IA real (replay solo reproduce las revisiones de la demo). Elegí una:\n" +
+        `  guardian ask "${question}" --use gemini   ← en la nube, la más precisa (necesita key gratuita)\n` +
+        `  guardian ask "${question}" --use ollama   ← local y privada (necesita Ollama instalado)`,
+    );
   }
 
   const keywords = extractKeywords(question);

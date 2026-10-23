@@ -19,16 +19,30 @@ const SCENARIOS_DIR = join(ROOT, "demo", "scenarios");
 const WORK_DIR = join(ROOT, ".demo-work");
 const scenarios = JSON.parse(readFileSync(join(SCENARIOS_DIR, "scenarios.json"), "utf8"));
 
+// Primer argumento suelto = escenario; el resto se le pasa a `guardian review`
+// (--record, --no-llm, --use ollama, --model qwen2.5-coder:14b...).
+const FLAGS_WITH_VALUE = new Set(["--use", "--model", "--base"]);
 const args = process.argv.slice(2);
-const target = args.find((a) => !a.startsWith("-"));
-const reviewFlags = args.filter((a) => a.startsWith("-")); // --record, --no-llm, etc.
+let target;
+const reviewFlags = [];
+for (let i = 0; i < args.length; i++) {
+  if (FLAGS_WITH_VALUE.has(args[i])) {
+    reviewFlags.push(args[i], args[++i]);
+  } else if (args[i].startsWith("-")) {
+    reviewFlags.push(args[i]);
+  } else if (!target) {
+    target = args[i];
+  }
+}
 
 if (!existsSync(CLI)) {
   console.error("No encuentro agent/dist/cli.js. Corré `npm install` en la raíz (compila el CLI).");
   process.exit(2);
 }
 if (!target) {
-  console.log("Uso: npm run demo -- <escenario|all|sandbox> [--record] [--no-llm]\n\nEscenarios:");
+  console.log(
+    "Uso: npm run demo -- <escenario|all|sandbox> [--use replay|gemini|ollama] [--model <nombre>] [--record] [--no-llm]\n\nEscenarios:",
+  );
   for (const s of scenarios) console.log(`  ${s.id.padEnd(18)} ${s.title}`);
   console.log(`  ${"sandbox".padEnd(18)} Copia limpia de la tienda para probar tus propios cambios`);
   process.exit(0);

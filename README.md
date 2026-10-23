@@ -50,6 +50,28 @@ cp .env.example .env
 
 ---
 
+## Elegir la IA desde la terminal
+
+Por defecto Guardian usa **replay** (respuestas grabadas, sin key ni internet). Para cualquier comando podés elegir otra IA con `--use`:
+
+```bash
+guardian review                       # replay (por defecto)
+guardian review --use ia              # Gemini, en la nube ("ia" y "gemini" son lo mismo)
+guardian review --use local           # Ollama, en tu máquina ("local" y "ollama" son lo mismo)
+guardian review --use local --model qwen2.5-coder:14b   # elegir también el modelo
+guardian ask "¿cómo se calcula el envío?" --use ia
+npm run demo -- all --use local       # también funciona con la demo
+guardian ia                           # qué IA está activa y si cada una está lista
+```
+
+Si la IA que elegiste no está lista, Guardian **no revisa a medias**: corta y te explica qué hacer.
+- **Gemini sin key:** te dice dónde sacarla gratis y dónde pegarla, y te ofrece la IA local.
+- **Ollama no instalado, cerrado o sin el modelo:** te da el comando de instalación para tu sistema y el `ollama pull` que falta.
+
+Para cambiar la IA por defecto, editá `LLM_PROVIDER` en el archivo `.env` (`replay`, `gemini` u `ollama`).
+
+---
+
 ## Tres caminos para probar (de menor a mayor esfuerzo)
 
 ### A) Replay (sin key ni red)
@@ -316,13 +338,18 @@ Para activarla: **Settings → Secrets and variables → Actions → New reposit
 ## Comandos disponibles
 
 ```bash
-guardian review [--base <ref>] [--json] [--no-llm] [--record] [--pre-push]
+guardian review [--use replay|gemini|ollama] [--model <nombre>] [--base <ref>] [--json] [--no-llm] [--record] [--pre-push]
 ```
 Revisa los cambios y decide: APROBADO / ADVERTENCIA / BLOQUEADO.
 Exit code 1 si está bloqueado. `--pre-push` revisa solo los commits (lo usa el hook).
 
 ```bash
-guardian ask "<pregunta>"
+guardian ia
+```
+Muestra qué IA está activa por defecto y si replay, Gemini y Ollama están listas.
+
+```bash
+guardian ask "<pregunta>" [--use gemini|ollama] [--model <nombre>]
 ```
 Responde citando archivo:línea. Requiere un LLM configurado.
 

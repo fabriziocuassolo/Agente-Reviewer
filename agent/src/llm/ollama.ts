@@ -1,3 +1,4 @@
+import { ollamaSetupHelp } from "./help.js";
 import { LLMError, type LLMProvider, type LLMRequest, type LLMResponse } from "./types.js";
 
 interface OllamaChatResponse {
@@ -19,6 +20,26 @@ export class OllamaProvider implements LLMProvider {
     readonly model: string,
     private readonly timeoutMs: number,
   ) {}
+
+  /** Modelos instalados en Ollama, o null si Ollama no responde. */
+  async listModels(): Promise<string[] | null> {
+    try {
+      const response = await fetch(`${this.host.replace(/\/$/, "")}/api/tags`, { signal: AbortSignal.timeout(3_000) });
+      const data = (await response.json()) as { models?: { name: string }[] };
+      return (data.models ?? []).map((m) => m.name);
+    } catch {
+      return null;
+    }
+  }
+
+  /** Antes de revisar: ¿Ollama está corriendo y tiene el modelo? Si no, devuelve qué hacer. */
+  async checkReady(): Promise<string | null> {
+    const models = await this.listModels();
+    if (models === null) return ollamaSetupHelp(this.model, "no-server", this.host);
+    const wanted = this.model.includes(":") ? this.model : `${this.model}:latest`;
+    if (!models.includes(wanted)) return ollamaSetupHelp(this.model, "no-model", this.host);
+    return null;
+  }
 
   async complete(request: LLMRequest): Promise<LLMResponse> {
     let response: Response;

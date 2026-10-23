@@ -47,6 +47,10 @@ export class RecordingProvider implements LLMProvider {
     return this.inner.model;
   }
 
+  checkReady(): Promise<string | null> {
+    return this.inner.checkReady?.() ?? Promise.resolve(null);
+  }
+
   /** Ruta del archivo grabado (para mostrarla al usuario). */
   get savedTo(): string | null {
     return this.recording ? recordingPath(this.dir, this.recording.key) : null;
@@ -88,8 +92,8 @@ export class ReplayProvider implements LLMProvider {
     const path = recordingPath(this.dir, this.key ?? hash);
     if (!existsSync(path)) {
       throw new LLMError(
-        "no hay una grabación para este cambio. El modo replay solo funciona con los escenarios de demo " +
-          "(npm run demo); para revisar otros cambios usá ollama o gemini",
+        "replay solo tiene grabaciones de los escenarios de demo (npm run demo). " +
+          "Para que la IA revise este cambio, corré de nuevo con --use gemini o --use ollama",
       );
     }
 

@@ -31,7 +31,7 @@ describe("grabar y reproducir", () => {
     const dir = mkdtempSync(join(tmpdir(), "guardian-rec-"));
     await new RecordingProvider(fakeProvider("hola"), dir).complete(request);
     expect((await new ReplayProvider(dir).complete(request)).text).toBe("hola");
-    await expect(new ReplayProvider(dir).complete({ ...request, prompt: "otro" })).rejects.toThrow(/no hay una grabación/);
+    await expect(new ReplayProvider(dir).complete({ ...request, prompt: "otro" })).rejects.toThrow(/--use gemini o --use ollama/);
   });
 
   it("avisa si el prompt cambió desde que se grabó", async () => {
@@ -52,8 +52,8 @@ describe("createProvider", () => {
 
   it("explica qué falta en vez de fallar", () => {
     expect(createProvider({ LLM_PROVIDER: "gemini" }).reason).toMatch(/GEMINI_API_KEY/);
-    expect(createProvider({ LLM_PROVIDER: "openai" }).reason).toMatch(/desconocido/);
-    expect(createProvider({ LLM_PROVIDER: "replay" }, { record: true }).reason).toMatch(/proveedor real/);
+    expect(createProvider({ LLM_PROVIDER: "openai" }).reason).toMatch(/No conozco la IA/);
+    expect(createProvider({ LLM_PROVIDER: "replay" }, { record: true }).reason).toMatch(/IA real/);
   });
 
   it("--record envuelve al proveedor real", () => {

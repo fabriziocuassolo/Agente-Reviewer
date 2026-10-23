@@ -22,6 +22,8 @@ export interface LLMProvider {
   readonly name: string;
   readonly model: string;
   complete(request: LLMRequest): Promise<LLMResponse>;
+  /** Verificación previa opcional: devuelve null si está listo, o instrucciones si no. */
+  checkReady?(): Promise<string | null>;
 }
 
 /** Error del proveedor (red, timeout, cuota). El revisor lo convierte en un aviso. */

@@ -5,7 +5,7 @@ import { buildContext } from "./context.js";
 import { parseAddedLines } from "./diff.js";
 import { decide, sortFindings } from "./gate.js";
 import { collectChanges, getRepoRoot } from "./git.js";
-import { createProvider } from "./llm/provider.js";
+import { prepareProvider } from "./llm/provider.js";
 import { RecordingProvider } from "./llm/replay.js";
 import { applyMemory, loadMemory, relevantExceptions, saveLastReview } from "./memory.js";
 import { loadSkills } from "./skills.js";
@@ -26,6 +26,10 @@ export interface ReviewOptions {
   record?: boolean;
   /** Revisar solo commits, ignorando cambios sin commitear (hook pre-push). */
   committedOnly?: boolean;
+  /** IA elegida desde la terminal (--use replay|gemini|ollama). */
+  use?: string;
+  /** Modelo elegido desde la terminal (--model). */
+  model?: string;
 }
 
 /**
@@ -44,6 +48,15 @@ export async function runReview(options: ReviewOptions): Promise<ReviewReport> {
   const memory = loadMemory(root);
   const timer = new StageTimer();
   const warnings: string[] = [];
+
+  // La IA se prepara ANTES de revisar: si la pidieron con --use y no está lista
+  // (falta la key, Ollama no está instalado...), se corta acá con las instrucciones.
+  const { provider, reason } =
+    options.provider !== undefined
+      ? { provider: options.provider, reason: "proveedor no disponible" }
+      : options.llm === false
+        ? { provider: null, reason: "" }
+        : await prepareProvider(process.env, { use: options.use, model: options.model, record: options.record });
 
   // 1. Recolector
   const changes = await timer.measure("Recolección", () =>
@@ -87,8 +100,6 @@ export async function runReview(options: ReviewOptions): Promise<ReviewReport> {
   // 3 y 4. Revisión con IA (solo si tiene sentido gastarla)
   // (un secreto falso de un test, ya descartado por el equipo, no debe frenar la revisión con IA)
   const hasCritical = applyMemory(findings, memory).kept.some((f) => f.severity === "critico");
-  const { provider, reason } =
-    options.provider !== undefined ? { provider: options.provider, reason: "proveedor no disponible" } : createProvider(process.env, { record: options.record });
 
   if (options.llm === false) {
     warnings.push("Revisión con IA desactivada (--no-llm).");
@@ -96,7 +107,7 @@ export async function runReview(options: ReviewOptions): Promise<ReviewReport> {
     // Si ya está bloqueado, llamar al modelo es gastar tiempo y cuota: primero hay que arreglar esto.
     warnings.push("Se omitió la revisión con IA: los chequeos determinísticos ya encontraron fallos críticos.");
   } else if (!provider) {
-    warnings.push(`Se omitió la revisión con IA: ${reason}.`);
+    warnings.push(`Se omitió la revisión con IA.\n${reason}`);
   } else {
     const { context, guidance } = await timer.measure("Contexto", () => {
       const context = buildContext(root, changes, config.context.maxChars);
