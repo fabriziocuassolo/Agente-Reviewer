@@ -161,10 +161,10 @@ Aviso: "Se omitió la revisión con IA".
 **Edición** en cualquier archivo, por ejemplo al final de `src/server.ts`, agregá:
 
 ```ts
-const PAYMENTS_API_KEY = "prod_9f8a7b6c5d4e3f2a1b0c";
+const PAYMENTS_API_KEY = "clave-de-prueba-123456";
 ```
 
-**Esperado:** BLOQUEADO al instante (detector de secretos). El reporte muestra solo `prod…` para no
+**Esperado:** BLOQUEADO al instante (detector de secretos). El reporte muestra solo `clav…` para no
 volver a filtrar la key. No se llama a la IA.
 
 ---

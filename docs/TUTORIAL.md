@@ -124,10 +124,10 @@ git commit -m "initial"
 Editá cualquier archivo o creá uno nuevo. Por ejemplo:
 
 ```bash
-echo 'const API_KEY = "prod_9f8a7b6c5d4e3f2a1b0c";' >> index.js
+echo 'const API_KEY = "clave-de-prueba-123456";' >> index.js
 ```
 
-(Es una key inventada, pero con la forma de una real.)
+(Es un valor inventado: a Guardian le alcanza con ver una variable llamada `API_KEY` con un texto fijo de 8 caracteres o más.)
 
 ### 3.3. Ejecutá `guardian review`
 
@@ -148,8 +148,8 @@ Chequeos determinísticos
   – Tests                omitido: no se encontró configuración en el proyecto
 
 Hallazgos (1)
-   CRÍTICO  index.js:2 [secretos] G-57cca0
-    Credencial hardcodeada escrita en el código: prod… (25 caracteres). Cualquiera con acceso al repo (o a su historial) puede usarla.
+   CRÍTICO  index.js:2 [secretos] G-1a3efa
+    Credencial hardcodeada escrita en el código: clav… (22 caracteres). Cualquiera con acceso al repo (o a su historial) puede usarla.
     → Mové el valor a una variable de entorno (process.env) y agregala a .env.example sin el valor real. Si ya se pusheó, considerá la clave comprometida y rotala.
 
 ⚠ Se omitió la revisión con IA: los chequeos determinísticos ya encontraron fallos críticos.
