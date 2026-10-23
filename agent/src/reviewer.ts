@@ -17,7 +17,8 @@ const llmFindingSchema = z.object({
   suggestion: z.string().min(1),
 });
 
-const responseSchema = z.object({ findings: z.array(llmFindingSchema) });
+// Algunos modelos locales responden `{}` cuando no encuentran nada: se toma como lista vacía.
+const responseSchema = z.object({ findings: z.array(llmFindingSchema).default([]) });
 
 // ---------- Prompt ----------
 
@@ -159,6 +160,7 @@ function toFindings(data: z.infer<typeof responseSchema>, changedFiles: string[]
   const changed = new Set(changedFiles.map(normalize));
 
   const findings: Finding[] = [];
+  const seen = new Set<string>();
   let discarded = 0;
   for (const f of data.findings) {
     const file = f.file ? normalize(f.file) : null;
@@ -166,9 +168,13 @@ function toFindings(data: z.infer<typeof responseSchema>, changedFiles: string[]
       discarded++;
       continue;
     }
+    // El ID lo generamos nosotros (no el modelo) para que sea estable y único.
+    const id = makeFindingId("llm", file, f.category.toLowerCase(), f.explanation.slice(0, 120));
+    // Los modelos chicos a veces repiten el mismo hallazgo: se muestra una sola vez.
+    if (seen.has(id)) continue;
+    seen.add(id);
     findings.push({
-      // El ID lo generamos nosotros (no el modelo) para que sea estable y único.
-      id: makeFindingId("llm", file, f.category.toLowerCase(), f.explanation.slice(0, 120)),
+      id,
       file,
       line: f.line,
       severity: f.severity,

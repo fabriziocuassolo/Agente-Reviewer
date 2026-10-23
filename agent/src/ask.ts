@@ -172,7 +172,9 @@ export async function ask(question: string, options: AskOptions): Promise<AskRes
   const selected = selectFiles(ranked, MAX_CONTEXT_CHARS);
   const files = selected.map((f) => `## ${f.path}\n\`\`\`\n${addLineNumbers(f.content)}\n\`\`\``).join("\n\n");
   const prompt = redactSecrets(
-    `# Pregunta\n\n${question}\n\n# Estructura del proyecto\n\n${buildTreeView(allFiles.map((f) => f.path))}\n\n# Archivos relevantes\n\n${files}`,
+    `# Pregunta\n\n${question}\n\n# Estructura del proyecto\n\n${buildTreeView(allFiles.map((f) => f.path))}\n\n# Archivos relevantes\n\n${files}` +
+      // Se repite al final: los modelos locales chicos "pierden" la pregunta si queda solo al principio.
+      `\n\n# Recordá: respondé en español esta pregunta, citando archivo:línea\n\n${question}`,
   ).text;
 
   try {

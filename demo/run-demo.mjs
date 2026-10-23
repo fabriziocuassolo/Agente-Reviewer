@@ -28,8 +28,17 @@ if (!existsSync(CLI)) {
   process.exit(2);
 }
 if (!target) {
-  console.log("Uso: npm run demo -- <escenario|all> [--record] [--no-llm]\n\nEscenarios:");
+  console.log("Uso: npm run demo -- <escenario|all|sandbox> [--record] [--no-llm]\n\nEscenarios:");
   for (const s of scenarios) console.log(`  ${s.id.padEnd(18)} ${s.title}`);
+  console.log(`  ${"sandbox".padEnd(18)} Copia limpia de la tienda para probar tus propios cambios`);
+  process.exit(0);
+}
+
+// sandbox: copia limpia (sin patch) para experimentar a mano con guardian review.
+if (target === "sandbox") {
+  const dir = prepareWorkdir("sandbox", null);
+  console.log(`Copia limpia lista en: ${dir}`);
+  console.log("Editá cualquier archivo ahí y después corré, dentro de esa carpeta: guardian review");
   process.exit(0);
 }
 
@@ -66,7 +75,7 @@ if (results.length > 1) printSummary(results);
 
 // ---------------------------------------------------------------------------
 
-function prepareWorkdir(id) {
+function prepareWorkdir(id, patch = `${id}.patch`) {
   const dir = join(WORK_DIR, id);
   rmSync(dir, { recursive: true, force: true });
   cpSync(join(ROOT, "storefront-demo"), dir, {
@@ -81,7 +90,7 @@ function prepareWorkdir(id) {
   git("config", "user.email", "demo@guardian.local");
   git("add", "-A");
   git("commit", "-q", "-m", "Estado base de la tienda");
-  git("apply", join(SCENARIOS_DIR, `${id}.patch`));
+  if (patch) git("apply", join(SCENARIOS_DIR, patch));
   return dir;
 }
 

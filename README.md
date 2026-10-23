@@ -81,7 +81,7 @@ Modelo en tu máquina. Privado y gratis, pero más lento en CPU.
    ```bash
    ollama pull qwen2.5-coder:7b
    ```
-   (Unos 4-5 GB. Podés usar otro modelo compatible cambiando `OLLAMA_MODEL` en `.env`.)
+   (Unos 4-5 GB. Si tu placa de video tiene 12 GB o más, usá `qwen2.5-coder:14b`, unos 9 GB: es bastante más preciso.)
 
 **En `.env`:**
 ```
@@ -94,7 +94,9 @@ OLLAMA_MODEL=qwen2.5-coder:7b
 npm run demo -- 02-pricing-float
 ```
 
-La primera revisión tarda más (el modelo se carga en memoria). Las siguientes son más rápidas.
+La primera revisión tarda más (el modelo se carga en memoria). Con una GPU moderna, las siguientes tardan entre 2 y 16 s.
+
+**Calidad medida:** el 14B encontró los bugs del escenario 04 y la mitad del 02; el 7B solo el del 04. Ambos dan falsos positivos en cambios limpios. Gemini fue el más preciso. Detalle y casos para probar en [docs/CASOS-DE-PRUEBA.md](docs/CASOS-DE-PRUEBA.md).
 
 ---
 
@@ -303,7 +305,7 @@ Para activarla: **Settings → Secrets and variables → Actions → New reposit
 
 1. **Cuota gratuita de Gemini:** unas 20 revisiones por día y por modelo. Si se agota, Guardian sigue con los chequeos determinísticos y la decisión queda como mucho en ADVERTENCIA (regla `ia-no-disponible`).
 2. **Replay solo sirve para los escenarios de demo.** Para revisar código propio hace falta Gemini u Ollama.
-3. **Ollama no fue probado en la máquina de desarrollo** (está implementado con la API documentada).
+3. **Los modelos locales son menos precisos que Gemini:** `qwen2.5-coder:7b` no detecta los bugs más sutiles y ambos (7B y 14B) generan falsos positivos en cambios correctos. Ver [docs/CASOS-DE-PRUEBA.md](docs/CASOS-DE-PRUEBA.md).
 4. **Contexto acotado:** se envían el diff, los archivos modificados y sus imports directos, hasta ~80.000 caracteres.
 5. **El revisor sugiere correcciones pero no las valida** (no ejecuta el arreglo propuesto).
 6. **`ask` busca por palabras clave**, sin búsqueda semántica ni memoria entre preguntas.

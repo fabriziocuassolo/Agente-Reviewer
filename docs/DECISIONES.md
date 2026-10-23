@@ -141,6 +141,14 @@
   - Anécdota útil: al regrabar, la IA (con skills) encontró un bug latente en el escenario
     "limpio" 01 (filtro en minúsculas vs. categorías con su casing original). Se corrigió el
     escenario. Muestra que el revisor aporta incluso en cambios que parecían correctos.
+
+  Prueba con Ollama (RTX 5080 16 GB, 100% GPU, num_ctx 16384 confirmado con `ollama ps`):
+  - Escenarios: Gemini 3.6 Flash 4/4; qwen2.5-coder:14b 3/4 (encuentra los decimales del 02 pero no
+    el cupón doble; falsos positivos en 01); qwen2.5-coder:7b 2/4 (solo el await del 04, con línea mal).
+  - Tiempos de IA locales: 2-16 s. Privacidad total, menos precisión: es el trade-off central.
+  - Default se mantiene en 7b (corre en casi cualquier PC); se recomienda 14b con ≥12 GB de VRAM.
+  - Ajustes que salieron de probar modelos chicos: deduplicar hallazgos repetidos, aceptar `{}` como
+    "sin hallazgos" y repetir la pregunta al final del prompt de `ask` (la perdían en textos largos).
 -->
 
 ## 4. Cómo balanceé costo, tiempo, privacidad y operabilidad

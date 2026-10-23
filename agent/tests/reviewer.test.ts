@@ -73,8 +73,13 @@ describe("reviewWithLLM", () => {
     expect(result.inputTokens).toBe(200);
   });
 
+  it("toma `{}` como \"sin hallazgos\"", async () => {
+    const result = await reviewWithLLM(fakeProvider("{}"), context);
+    expect(result).toMatchObject({ findings: [], degraded: false, attempts: 1 });
+  });
+
   it("degrada con un aviso si falla dos veces", async () => {
-    const result = await reviewWithLLM(fakeProvider("{}", "{}"), context);
+    const result = await reviewWithLLM(fakeProvider("[]", "no es json"), context);
     expect(result.findings).toEqual([]);
     expect(result.warnings[0]).toMatch(/respuesta inválida dos veces/);
     expect(result.degraded).toBe(true);
@@ -84,6 +89,13 @@ describe("reviewWithLLM", () => {
     const result = await reviewWithLLM(fakeProvider(new LLMError("timeout")), context);
     expect(result.findings).toEqual([]);
     expect(result.warnings[0]).toContain("timeout");
+  });
+
+  it("muestra una sola vez los hallazgos repetidos", async () => {
+    const parsed = JSON.parse(VALID);
+    const repeated = JSON.stringify({ findings: [parsed.findings[0], parsed.findings[0], { ...parsed.findings[0], line: 9 }] });
+    const result = await reviewWithLLM(fakeProvider(repeated), context);
+    expect(result.findings).toHaveLength(1);
   });
 
   it("descarta hallazgos sobre archivos que no están en el cambio", async () => {
