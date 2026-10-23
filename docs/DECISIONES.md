@@ -142,6 +142,19 @@
     "limpio" 01 (filtro en minúsculas vs. categorías con su casing original). Se corrigió el
     escenario. Muestra que el revisor aporta incluso en cambios que parecían correctos.
 
+  Elegir y agregar IAs:
+  - `--use replay|gemini|ollama` (alias ia/local) y `--model` por comando; prioridad: --use > .env > replay.
+    Si la IA pedida no está lista, se corta ANTES de revisar con instrucciones (key, instalación, modelo).
+  - IAs propias sin tocar código: `IA_<NOMBRE>_URL/KEY/MODEL[/FORMATO]` en el .env; `--use <nombre>`
+    y `guardian ia` las descubren solas. Formato "openai" (/chat/completions, el estándar de facto:
+    OpenAI, DeepSeek, Groq, Mistral, OpenRouter, LM Studio) por fetch; formato "anthropic" con el SDK
+    oficial (Claude tiene su propia API). Decisión: un adaptador genérico cubre a casi todos los
+    proveedores, en vez de uno por marca. Modo JSON (response_format) con reintento sin él si no se soporta.
+  - Aclaración clave para usuarios: ChatGPT Plus / Claude Pro no dan acceso a la API.
+  - Hallazgo: el endpoint OpenAI-compatible de Ollama usa contexto de 2k tokens y recorta el prompt;
+    por eso para Ollama se recomienda el proveedor nativo (--use local, que fija num_ctx).
+  - guardian --help / ayuda / ayuda otra-ia: guía para principiantes en castellano.
+
   Prueba con Ollama (RTX 5080 16 GB, 100% GPU, num_ctx 16384 confirmado con `ollama ps`):
   - Escenarios: Gemini 3.6 Flash 4/4; qwen2.5-coder:14b 3/4 (encuentra los decimales del 02 pero no
     el cupón doble; falsos positivos en 01); qwen2.5-coder:7b 2/4 (solo el await del 04, con línea mal).

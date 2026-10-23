@@ -68,7 +68,30 @@ Si la IA que elegiste no está lista, Guardian **no revisa a medias**: corta y t
 - **Gemini sin key:** te dice dónde sacarla gratis y dónde pegarla, y te ofrece la IA local.
 - **Ollama no instalado, cerrado o sin el modelo:** te da el comando de instalación para tu sistema y el `ollama pull` que falta.
 
-Para cambiar la IA por defecto, editá `LLM_PROVIDER` en el archivo `.env` (`replay`, `gemini` u `ollama`).
+Para cambiar la IA por defecto, editá `LLM_PROVIDER` en el archivo `.env` (`replay`, `gemini`, `ollama` o una IA tuya).
+
+### Agregar cualquier otra IA (ChatGPT, Claude, DeepSeek, Groq, Mistral...)
+
+Sin tocar código: elegí un nombre y agregá estas líneas al `.env`. Apenas las guardás, ya la podés usar con `--use <nombre>` y aparece en `guardian ia`.
+
+```bash
+# Cualquier servicio compatible con OpenAI (ChatGPT, DeepSeek, Groq, Mistral, OpenRouter, LM Studio...)
+IA_CHATGPT_URL=https://api.openai.com/v1
+IA_CHATGPT_KEY=tu-clave
+IA_CHATGPT_MODEL=nombre-del-modelo
+
+# Claude (Anthropic): usa su propio formato y no lleva URL (se usa el SDK oficial)
+IA_CLAUDE_FORMATO=anthropic
+IA_CLAUDE_KEY=tu-clave
+IA_CLAUDE_MODEL=claude-opus-5-5
+```
+
+```bash
+guardian review --use chatgpt
+guardian ask "¿qué cupones existen?" --use claude
+```
+
+Importante: las suscripciones de chat (ChatGPT Plus, Claude Pro) **no** incluyen acceso por API. Hace falta una API key de la consola para desarrolladores del proveedor, que se paga por uso. La guía completa, con la URL de cada proveedor, está en `guardian ayuda otra-ia`.
 
 ---
 

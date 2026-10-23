@@ -2,9 +2,10 @@
 import { Command } from "commander";
 import pc from "picocolors";
 import { ask } from "./ask.js";
-import { loadGuardianEnv } from "./env.js";
+import { join } from "node:path";
+import { GUARDIAN_HOME, loadGuardianEnv } from "./env.js";
 import { getRepoRoot } from "./git.js";
-import { COMMAND_EXAMPLES, mainGuide } from "./guide.js";
+import { COMMAND_EXAMPLES, mainGuide, otherAIGuide } from "./guide.js";
 import { installHook, uninstallHook } from "./hook.js";
 import { providersStatus } from "./llm/provider.js";
 import { dismissFinding, MEMORY_PATH } from "./memory.js";
@@ -145,6 +146,12 @@ for (const command of program.commands) {
 const args = process.argv.slice(2);
 if (args.length === 0 || (args.length === 1 && ["--help", "-h", "help", "ayuda"].includes(args[0]))) {
   console.log(mainGuide());
+  process.exit(0);
+}
+// `guardian ayuda otra-ia` (también `help otra-ia`, `--help otra-ia` o `otra-ia`): cómo agregar cualquier IA.
+const OTHER_AI_TOPICS = ["otra-ia", "otras-ia", "otra", "llm", "agregar-ia"];
+if (OTHER_AI_TOPICS.includes(args[0]) || (["--help", "-h", "help", "ayuda"].includes(args[0]) && OTHER_AI_TOPICS.includes(args[1]))) {
+  console.log(otherAIGuide(join(GUARDIAN_HOME, ".env")));
   process.exit(0);
 }
 if (args[0] === "help" || args[0] === "ayuda") {

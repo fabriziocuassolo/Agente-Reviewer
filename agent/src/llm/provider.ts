@@ -2,6 +2,7 @@ import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import { GUARDIAN_HOME } from "../env.js";
 import { GuardianError } from "../types.js";
+import { createCustomProvider, missingConfig, readCustomProviders } from "./custom.js";
 import { GeminiProvider } from "./gemini.js";
 import { OllamaProvider } from "./ollama.js";
 import { RecordingProvider, ReplayProvider } from "./replay.js";
@@ -43,7 +44,8 @@ export interface ProviderOptions {
 
 export interface ProviderChoice {
   provider: LLMProvider | null;
-  name: ProviderName | null;
+  /** replay, gemini, ollama o el nombre de una IA agregada en el .env. */
+  name: string | null;
   /** true si la eligió el usuario con --use: si no está lista, se corta con instrucciones. */
   explicit: boolean;
   /** Por qué no hay proveedor, con instrucciones para resolverlo. */
@@ -89,13 +91,27 @@ export function createProvider(env: NodeJS.ProcessEnv = process.env, options: Pr
         return { provider: null, name, explicit, reason: "--record necesita una IA real: agregá --use gemini o --use ollama." };
       }
       return { provider: new ReplayProvider(RECORDINGS_DIR, recordingKey), name, explicit };
-    default:
-      return {
-        provider: null,
-        name: null,
-        explicit,
-        reason: `No conozco la IA "${name}". Opciones: --use replay, --use gemini (o "ia"), --use ollama (o "local").`,
-      };
+    default: {
+      // ¿Es una IA que el usuario agregó en el .env (IA_<NOMBRE>_...)?
+      const customs = readCustomProviders(env);
+      const custom = customs.get(name);
+      if (!custom) {
+        const extra = [...customs.keys()].map((n) => `, --use ${n}`).join("");
+        return {
+          provider: null,
+          name: null,
+          explicit,
+          reason:
+            `No conozco la IA "${name}". Opciones: --use replay, --use gemini (o "ia"), --use ollama (o "local")${extra}.\n` +
+            "Para agregar otra (ChatGPT, Claude, DeepSeek...): guardian ayuda otra-ia",
+        };
+      }
+      // --model completa o reemplaza el modelo del .env
+      if (options.model) custom.model = options.model;
+      const missing = missingConfig(custom);
+      if (missing) return { provider: null, name, explicit, reason: missing };
+      provider = createCustomProvider(custom, timeoutMs);
+    }
   }
 
   return {
@@ -123,7 +139,7 @@ export async function prepareProvider(env: NodeJS.ProcessEnv, options: ProviderO
 // `guardian ia`: estado de cada opción
 
 export interface ProviderStatus {
-  name: ProviderName;
+  name: string;
   active: boolean;
   ready: boolean;
   detail: string;
@@ -170,5 +186,18 @@ export async function providersStatus(env: NodeJS.ProcessEnv = process.env): Pro
           : `Ollama anda, pero falta el modelo ${ollamaModel} (ollama pull ${ollamaModel}).`
         : `Listo · modelo ${ollamaModel}${installed && installed.length > 1 ? ` (instalados: ${installed.join(", ")})` : ""}. Local y privado.`,
     },
+    // IAs que el usuario agregó en el .env
+    ...[...readCustomProviders(env).values()].map((custom) => {
+      const missing = missingConfig(custom);
+      const where = custom.format === "anthropic" ? "API de Anthropic (Claude)" : custom.url;
+      return {
+        name: custom.name,
+        active: active === custom.name,
+        ready: !missing,
+        detail: missing
+          ? `Agregada por vos, pero incompleta. Falta: ${missing.split("\n").slice(1, -1).map((l) => l.trim().split("=")[0]).join(", ")}`
+          : `Agregada por vos · ${where} · modelo ${custom.model}${custom.key ? "" : " · sin clave"}`,
+      };
+    }),
   ];
 }

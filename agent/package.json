@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.2.0",
     "commander": "^15.0.0",
     "ignore": "^7.0.13",
     "picocolors": "^1.1.1",
