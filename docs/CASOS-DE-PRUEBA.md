@@ -298,6 +298,61 @@ Sin la búsqueda exacta que Guardian le pasa al modelo, el 14B inventaba ubicaci
 
 ---
 
+### Caso K — Elegir la IA con el menú (la primera vez)
+
+```powershell
+guardian ia
+```
+
+Respondé `s` y elegí con números: `2` (IA local) → `2` (modelo más grande). Después corré `guardian review`
+sin opciones.
+
+**Esperado:** la primera línea dice `🤖 Usando: IA local · Ollama · qwen2.5-coder:14b ... (tu elección
+guardada · para cambiarla: guardian ia)`. Probá también `3` → `2` (Claude sin configurar): te explica de
+dónde sacar la clave y qué líneas agregar al `.env`, y ofrece hacerlo ahí mismo (Enter para salir).
+
+**Resultado real:** ✅ los 8 caminos del menú (local chico/grande, Gemini configurada, Claude y GPT sin
+configurar, Otra, replay y un número inválido) se probaron con respuestas automáticas.
+
+---
+
+### Caso L — Lenguaje natural
+
+```powershell
+guardian "revisá mis cambios con la IA local"
+guardian "¿qué cupones existen?"
+guardian "aprendé que los precios van en centavos"
+guardian
+```
+
+**Esperado:** cada frase muestra el comando equivalente (`→ guardian review --use ollama`, `→ guardian ask
+"..."`, `→ guardian aprender "..."`) y lo ejecuta. `guardian` solo abre el menú principal.
+
+**Resultado real:** ✅ las 9 frases de los tests se traducen al comando correcto.
+
+---
+
+### Caso M — Corrección automática, rollback y push
+
+Usá el sandbox con el Caso H aplicado (o el escenario 04) y corré `guardian review` con una IA real.
+
+1. Respondé `s` a "¿Querés que Guardian intente corregir…?".
+2. Mirá el diff y el **resultado de la validación** (problemas antes → después, tests).
+3. Elegí `2` (deshacer) → el archivo queda **idéntico** a como estaba.
+4. Repetí y elegí `1` (commit + push) en un repo con remoto.
+
+**Resultado real (Ollama 14B):**
+- Escenario 04: agregó correctamente `await inventory.reserve(items)`; tests pasan.
+- Caso H: corrigió la XSS (`innerHTML` → `textContent`), pero la contraseña la "arregló" con `process.env`
+  en el navegador → la validación siguió en **BLOQUEADO** y Guardian recomendó deshacer. Al elegir
+  push, pidió una segunda confirmación; con "no", hizo rollback.
+- Rollback: mismo hash del archivo antes y después ✅. Push a un remoto local: commit
+  "Correcciones automáticas de Guardian" ✅.
+- Limitación: con modelos locales la validación es ruidosa (el 14B volvió a reportar "falta await"
+  sobre la línea ya corregida). La señal dura son los tests.
+
+---
+
 ## 3. Preguntas para `guardian ask`
 
 Corré desde `storefront-demo/` (así busca solo en la tienda):
