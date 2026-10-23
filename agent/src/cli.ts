@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { Command } from "commander";
 import pc from "picocolors";
+import { ask } from "./ask.js";
 import { loadGuardianEnv } from "./env.js";
 import { getRepoRoot } from "./git.js";
 import { dismissFinding, MEMORY_PATH } from "./memory.js";
@@ -46,6 +47,15 @@ program
     const entry = dismissFinding(root, id, reason);
     console.log(pc.green(`✔ ${entry.id} descartado: "${entry.reason}"`));
     console.log(pc.dim(`  Guardado en ${MEMORY_PATH}. Commitealo para que lo aproveche todo el equipo.`));
+  });
+
+program
+  .command("ask")
+  .description("Responde preguntas sobre el código del proyecto citando archivos y líneas")
+  .argument("<pregunta>", "tu pregunta sobre el código")
+  .action(async (question: string) => {
+    const answer = await ask(question, { cwd: process.cwd() });
+    console.log(answer);
   });
 
 program.parseAsync().catch((error: unknown) => {
