@@ -338,6 +338,11 @@ Para activarla: **Settings → Secrets and variables → Actions → New reposit
 ## Comandos disponibles
 
 ```bash
+guardian --help        # (o "guardian" a secas, o "guardian ayuda")
+```
+Guía completa en castellano para quien lo usa por primera vez: primeros pasos, cada comando con ejemplos, cómo configurar cada IA, cómo leer el resultado y qué hacer si algo falla. `guardian <comando> --help` muestra el detalle de un comando.
+
+```bash
 guardian review [--use replay|gemini|ollama] [--model <nombre>] [--base <ref>] [--json] [--no-llm] [--record] [--pre-push]
 ```
 Revisa los cambios y decide: APROBADO / ADVERTENCIA / BLOQUEADO.

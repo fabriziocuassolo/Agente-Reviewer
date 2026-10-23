@@ -4,6 +4,7 @@ import pc from "picocolors";
 import { ask } from "./ask.js";
 import { loadGuardianEnv } from "./env.js";
 import { getRepoRoot } from "./git.js";
+import { COMMAND_EXAMPLES, mainGuide } from "./guide.js";
 import { installHook, uninstallHook } from "./hook.js";
 import { providersStatus } from "./llm/provider.js";
 import { dismissFinding, MEMORY_PATH } from "./memory.js";
@@ -14,26 +15,37 @@ import { GuardianError } from "./types.js";
 loadGuardianEnv();
 
 const USE_HELP =
-  "IA a usar: replay (grabada, por defecto) | gemini o ia (nube) | ollama o local (en tu máquina). " +
+  "qué IA usar: replay (grabada, por defecto) · ia o gemini (nube) · local u ollama (tu máquina). " +
   "Si no está lista, te explica cómo configurarla";
+
+// Títulos de la ayuda de commander, en castellano.
+const HELP_TITLES: Record<string, string> = {
+  "Usage:": "Uso:",
+  "Options:": "Opciones:",
+  "Arguments:": "Argumentos:",
+  "Commands:": "Comandos:",
+};
 
 const program = new Command();
 
 program
   .name("guardian")
   .description("Revisión de código asistida por IA para equipos de e-commerce")
-  .version("0.1.0");
+  .version("0.1.0", "-V, --version", "muestra la versión")
+  .helpOption("-h, --help", "muestra la ayuda")
+  .helpCommand(false) // `guardian help` lo maneja la guía de abajo
+  .configureHelp({ styleTitle: (title) => HELP_TITLES[title] ?? title });
 
 program
   .command("review")
   .description("Revisa los cambios actuales y decide si están listos: APROBADO / ADVERTENCIA / BLOQUEADO")
-  .option("--base <ref>", "comparar contra esta rama o commit (por defecto se detecta solo)")
-  .option("--json", "salida en JSON para máquinas (CI, GitHub Action)")
-  .option("--no-llm", "solo chequeos determinísticos, sin llamar al modelo")
-  .option("--record", "graba las respuestas del modelo real en demo/recordings para el modo replay")
-  .option("--pre-push", "revisa solo los commits (no los cambios sin commitear); lo usa el hook")
   .option("--use <ia>", USE_HELP)
   .option("--model <nombre>", "modelo a usar con esa IA (ej: qwen2.5-coder:14b, gemini-3.8-flash)")
+  .option("--base <ref>", "comparar contra esta rama o commit (por defecto se detecta solo)")
+  .option("--json", "salida en JSON para máquinas (CI, GitHub Action)")
+  .option("--no-llm", "sin IA: solo los controles automáticos (rápido, gratis, sin internet)")
+  .option("--record", "graba las respuestas del modelo real en demo/recordings para el modo replay")
+  .option("--pre-push", "revisa solo los commits (no los cambios sin commitear); lo usa el hook")
   .action(async (options: { base?: string; json?: boolean; llm: boolean; record?: boolean; prePush?: boolean; use?: string; model?: string }) => {
     const report = await runReview({
       cwd: process.cwd(),
@@ -119,6 +131,26 @@ program
     uninstallHook(root);
     console.log(pc.green("✔ Hook desinstalado"));
   });
+
+// Cada comando muestra ejemplos al final de `guardian <comando> --help`.
+for (const command of program.commands) {
+  command.helpOption("-h, --help", "muestra la ayuda de este comando");
+  command.usage(command.usage().replace("[options]", "[opciones]"));
+  const examples = COMMAND_EXAMPLES[command.name()];
+  if (examples) command.addHelpText("after", examples);
+}
+
+// `guardian`, `guardian --help` y `guardian help` muestran la guía completa para principiantes.
+// `guardian help review` muestra la ayuda de ese comando.
+const args = process.argv.slice(2);
+if (args.length === 0 || (args.length === 1 && ["--help", "-h", "help", "ayuda"].includes(args[0]))) {
+  console.log(mainGuide());
+  process.exit(0);
+}
+if (args[0] === "help" || args[0] === "ayuda") {
+  process.argv.splice(2, 1);
+  process.argv.push("--help");
+}
 
 program.parseAsync().catch((error: unknown) => {
   if (error instanceof GuardianError) {
