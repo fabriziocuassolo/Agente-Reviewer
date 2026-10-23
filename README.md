@@ -2,6 +2,10 @@
 
 **Revisión de código asistida por IA para equipos de e-commerce**
 
+> 🛒 **Tienda de ejemplo en vivo:** **[storefront-demo-black.vercel.app](https://storefront-demo-black.vercel.app/)**
+> Es el e-commerce sobre el que trabaja Guardian (catálogo, carrito, cupones y checkout). Probá el cupón `BIENVENIDA10`.
+> Nota: está desplegada como función serverless, así que el carrito y el stock pueden reiniciarse entre visitas.
+
 Guardian es un agente autónomo que revisa tus cambios de código antes de que los pushees, detectando bugs de negocio (precios, stock, seguridad) que los linters y tests no ven. Se ejecuta desde la terminal de tu IDE, lee el código directamente del repo y aprende de las decisiones del equipo sin necesidad de fine-tuning.
 
 ---
