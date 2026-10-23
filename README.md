@@ -455,6 +455,17 @@ Desinstala el hook pre-push.
 
 ---
 
+## Publicar la tienda de ejemplo en Vercel
+
+1. En Vercel: **New Project** → importá este repositorio.
+2. **Root Directory: `storefront-demo`** (importante: no la raíz del repo).
+3. Framework: Vercel lo detecta solo como Express (`src/app.ts` exporta la app). Deploy.
+
+En Vercel no se compila el agente (solo hace falta la tienda) y la carpeta `public/` se sirve desde su CDN.
+Ojo: el carrito y el stock viven en memoria, así que en Vercel pueden reiniciarse entre pedidos; alcanza para mostrar la tienda, no para operarla en serio.
+
+---
+
 ## Licencia
 
 MIT

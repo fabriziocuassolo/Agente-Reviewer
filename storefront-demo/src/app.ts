@@ -39,3 +39,8 @@ export function createApp() {
 
   return app;
 }
+
+// Vercel busca la app en src/app.ts y la usa como función: necesita el export por defecto.
+// (En Vercel, express.static se ignora y la carpeta public/ se sirve desde su CDN.)
+const app = createApp();
+export default app;

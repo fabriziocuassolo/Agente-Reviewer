@@ -12,7 +12,7 @@
   ],
   "scripts": {
     "build": "npm run build --workspace agent",
-    "prepare": "npm run build --workspace agent",
+    "prepare": "node scripts/build-agent.mjs",
     "store": "npm run start --workspace storefront-demo",
     "demo": "node demo/run-demo.mjs",
     "test": "npm run test --workspaces --if-present"

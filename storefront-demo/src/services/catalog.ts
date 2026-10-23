@@ -1,11 +1,11 @@
-import { readFileSync } from "node:fs";
 import type { Product } from "../types.js";
+// Se importa (en vez de leerlo con fs) para que el JSON viaje dentro del paquete al desplegar
+// en plataformas serverless como Vercel, que descartan los archivos que no se importan.
+import products from "../../data/products.json" with { type: "json" };
 
-const DATA_FILE = new URL("../../data/products.json", import.meta.url);
-
-/** Lee el catálogo desde el JSON. Se usa una sola vez al iniciar la app. */
+/** Devuelve una copia del catálogo (cada instancia de la app arranca con su propio estado). */
 export function loadProducts(): Product[] {
-  return JSON.parse(readFileSync(DATA_FILE, "utf8")) as Product[];
+  return structuredClone(products) as Product[];
 }
 
 /** Catálogo de solo lectura. El stock vivo lo maneja Inventory. */

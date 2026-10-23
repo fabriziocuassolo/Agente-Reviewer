@@ -142,6 +142,17 @@
     "limpio" 01 (filtro en minúsculas vs. categorías con su casing original). Se corrigió el
     escenario. Muestra que el revisor aporta incluso en cambios que parecían correctos.
 
+  Despliegue de la tienda en Vercel:
+  - El primer intento falló: Vercel construía desde la raíz y el "prepare" compilaba el agente, con otra
+    versión de npm que resolvía distinto las dependencias anidadas (ignore 7 del agente vs ignore 5 de ESLint).
+    La tienda no necesita el agente: scripts/build-agent.mjs lo saltea si existe la variable VERCEL.
+  - Vercel detecta Express en src/app.ts y exige export por defecto → app.ts exporta la app; server.ts solo
+    hace listen para uso local. express.static se ignora en Vercel: public/ se sirve desde su CDN.
+  - products.json se importa (import ... with { type: "json" }) en vez de leerse con fs, para que viaje
+    dentro del paquete de la función.
+  - Limitación conocida: carrito y stock viven en memoria; en serverless cada instancia tiene su estado.
+    Para una tienda real habría que persistirlos (Vercel KV / Upstash Redis o una base de datos).
+
   Simplificación del uso y corrección automática (pedidos del autor):
   - Pedido: "tiene muchos comandos". Propuesta adoptada, en 3 niveles de menor a mayor esfuerzo:
     1) `guardian` solo → menú principal (revisar, revisar y corregir, preguntar, elegir IA, ayuda).
