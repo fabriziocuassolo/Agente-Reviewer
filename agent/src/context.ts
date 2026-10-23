@@ -3,12 +3,24 @@ import { dirname, join, posix } from "node:path";
 import ignore, { type Ignore } from "ignore";
 import { redactSecrets } from "./checks/secrets.js";
 import { isBinary, type ChangeSet } from "./git.js";
+import { belongsTo, inProject, type Project } from "./project.js";
 
 /**
  * Lo que NUNCA se envía al modelo, aunque el .guardianignore no lo diga.
  * Los lockfiles se suman por ser enormes y sin valor para la revisión.
  */
-const ALWAYS_IGNORED = [".env", ".env.*", "node_modules/", "dist/", ".git/", "package-lock.json", "yarn.lock", "pnpm-lock.yaml"];
+const ALWAYS_IGNORED = [
+  ".env",
+  ".env.*",
+  "node_modules/",
+  "dist/",
+  ".git/",
+  // Archivos internos de Guardian (memoria, último reporte): no son código del proyecto.
+  ".guardian/",
+  "package-lock.json",
+  "yarn.lock",
+  "pnpm-lock.yaml",
+];
 
 export interface ContextFile {
   path: string;
@@ -40,8 +52,12 @@ export function createIgnoreFilter(root: string): Ignore {
  * convenciones → diff → archivos modificados → archivos que estos importan.
  * Todo pasa por la redacción de secretos antes de salir de la máquina.
  */
-export function buildContext(root: string, changes: ChangeSet, maxChars: number): ReviewContext {
-  const filter = createIgnoreFilter(root);
+export function buildContext(root: string, changes: ChangeSet, maxChars: number, project?: Project): ReviewContext {
+  // Reglas de exclusión y convenciones salen del PROYECTO (en un monorepo, su subcarpeta);
+  // las rutas de los archivos siguen siendo relativas a la raíz del repo.
+  const projectDir = project?.dir ?? root;
+  const ignoreFilter = createIgnoreFilter(projectDir);
+  const filter = { ignores: (path: string) => ignoreFilter.ignores(project ? inProject(project, path) : path) };
   const omitted: string[] = [];
   let redactions = 0;
   let budget = maxChars;
@@ -53,7 +69,7 @@ export function buildContext(root: string, changes: ChangeSet, maxChars: number)
   };
 
   // 1. Convenciones del proyecto
-  const conventionsPath = join(root, "docs", "CONVENTIONS.md");
+  const conventionsPath = join(projectDir, "docs", "CONVENTIONS.md");
   const conventions = existsSync(conventionsPath) ? redact(readFileSync(conventionsPath, "utf8")) : null;
   budget -= conventions?.length ?? 0;
 
@@ -66,8 +82,13 @@ export function buildContext(root: string, changes: ChangeSet, maxChars: number)
   budget -= diff.length;
 
   // 3 y 4. Archivos modificados y luego sus imports directos
-  const changedFiles = changes.files.filter((f) => !filter.ignores(f));
-  omitted.push(...changes.files.filter((f) => filter.ignores(f)));
+  // Solo se le muestran a la IA archivos de texto que puede leer: si viera el nombre de un PDF
+  // o de un archivo interno, opinaría sobre algo que no puede ver.
+  // Los archivos del proyecto detectado van primero: si no entra todo, que no queden afuera ellos.
+  const changedFiles = changes.files
+    .filter((f) => !filter.ignores(f) && readText(root, f) !== null)
+    .sort((a, b) => Number(project ? !belongsTo(project, a) : 0) - Number(project ? !belongsTo(project, b) : 0));
+  omitted.push(...changes.files.filter((f) => !changedFiles.includes(f)));
 
   const files: ContextFile[] = [];
   const included = new Set<string>();
@@ -101,7 +122,7 @@ export function buildContext(root: string, changes: ChangeSet, maxChars: number)
 }
 
 /** Saca del diff las secciones de archivos ignorados. */
-function filterDiff(diff: string, filter: Ignore): string {
+function filterDiff(diff: string, filter: Pick<Ignore, "ignores">): string {
   return diff
     .split(/(?=^diff --git )/m)
     .filter((section) => {

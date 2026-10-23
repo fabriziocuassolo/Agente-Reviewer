@@ -35,7 +35,18 @@ export interface AskOptions {
   use?: string;
   /** Modelo elegido desde la terminal (--model). */
   model?: string;
+  /** Preguntas y respuestas anteriores (modo chat): permiten repreguntar "¿y eso dónde se usa?". */
+  history?: ChatTurn[];
 }
+
+export interface ChatTurn {
+  question: string;
+  answer: string;
+}
+
+// Cuántos intercambios anteriores se le recuerdan al modelo (más = más contexto, pero más tokens).
+const HISTORY_TURNS = 4;
+const HISTORY_ANSWER_CHARS = 1500;
 
 export interface AskResult {
   answer: string;
@@ -145,9 +156,77 @@ function addLineNumbers(content: string): string {
 
 const SYSTEM_PROMPT = `Sos un desarrollador senior que ayuda a un compañero a entender un proyecto de código.
 Respondé la pregunta usando SOLO el código y la documentación que se te pasan.
+Si hay una "Búsqueda exacta", usala para decir dónde está o dónde se usa algo: no menciones ubicaciones que no aparezcan ahí ni en los archivos.
 Citá siempre archivo y línea cuando menciones código, con el formato ruta/archivo.ts:42.
 Si con lo que tenés no alcanza para responder, decilo y sugerí dónde buscar.
 Respondé en español, en texto plano (sin JSON), breve y directo: primero la respuesta, después el detalle.`;
+
+/** ¿La pregunta se refiere a lo anterior? ("¿y eso?", "¿dónde se usa esa función?") */
+export function isFollowUp(question: string, keywords: string[]): boolean {
+  return keywords.length < 2 || /\b(eso|esa|ese|esto|esta|este|esos|esas|ah[ií]|lo mismo|la misma|el mismo|anterior)\b/i.test(question);
+}
+
+/** Nombres de código escritos en la pregunta: camelCase (calculateShipping) o entre `backticks`. */
+export function codeNamesInQuestion(question: string): string[] {
+  const names = new Set<string>();
+  const pattern = /`([^`]{3,})`|\b([a-z]+[A-Z][A-Za-z0-9]*)\b/g;
+  for (const match of question.matchAll(pattern)) names.add((match[1] ?? match[2]).toLowerCase());
+  return [...names].slice(0, 6);
+}
+
+/**
+ * Nombres de FUNCIONES de una respuesta (camelCase que empieza en minúscula, ej: calculateShipping).
+ * Son el tema típico de una repregunta; las constantes (SHIPPING_COST_CENTS) solo meterían ruido.
+ */
+export function functionNames(text: string): string[] {
+  const names = new Set<string>();
+  for (const match of text.matchAll(/`([a-z][a-z0-9]*[A-Z][A-Za-z0-9]*)(?:())?`/g)) names.add(match[1].toLowerCase());
+  return [...names].slice(0, 2);
+}
+
+/** Nombres de código mencionados entre `backticks` (funciones, constantes), sin rutas de archivo. */
+export function codeNames(text: string): string[] {
+  const names = new Set<string>();
+  for (const match of text.matchAll(/`([A-Za-z_][\w.]{2,})(?:\(\))?`/g)) {
+    const name = match[1];
+    if (/\.(ts|js|md|json|html|css)$/i.test(name)) continue; // es un archivo, no un nombre de código
+    names.add(name.split(".").pop()!.toLowerCase());
+  }
+  return [...names].slice(0, 6);
+}
+
+/**
+ * Búsqueda exacta (sin IA) de dónde aparece cada nombre de código: le da al modelo las
+ * ubicaciones reales, así no tiene que adivinarlas (los modelos chicos inventan líneas).
+ */
+export function exactOccurrences(files: { path: string; content: string }[], names: string[], max = 25): string {
+  if (names.length === 0) return "";
+  const lines: string[] = [];
+  for (const name of names) {
+    const needle = name.toLowerCase();
+    for (const file of files) {
+      file.content.split("\n").forEach((text, i) => {
+        if (lines.length < max && text.toLowerCase().includes(needle)) {
+          lines.push(`${file.path}:${i + 1}  ${text.trim().slice(0, 120)}`);
+        }
+      });
+    }
+  }
+  if (lines.length === 0) return "";
+  return (
+    `# Búsqueda exacta en el código (datos reales, usalos para decir DÓNDE está algo)\n\n` +
+    `Nombres buscados: ${names.join(", ")}\n${lines.join("\n")}\n\n`
+  );
+}
+
+/** Lo hablado antes, para que el modelo entienda las repreguntas. */
+function conversation(history: ChatTurn[]): string {
+  if (history.length === 0) return "";
+  const turns = history
+    .map((t) => `Pregunta: ${t.question}\nRespuesta: ${t.answer.slice(0, HISTORY_ANSWER_CHARS)}`)
+    .join("\n\n");
+  return `# Conversación anterior (para entender la pregunta nueva)\n\n${turns}\n\n`;
+}
 
 export async function ask(question: string, options: AskOptions): Promise<AskResult> {
   if (!question.trim()) throw new GuardianError("Escribí una pregunta.");
@@ -167,7 +246,17 @@ export async function ask(question: string, options: AskOptions): Promise<AskRes
     );
   }
 
-  const keywords = extractKeywords(question);
+  // En una charla, "¿y dónde se usa esa función?" no dice de qué habla: se buscan también los nombres
+  // de código (entre `backticks`) de la respuesta anterior y las palabras de la pregunta anterior.
+  const history = (options.history ?? []).slice(-HISTORY_TURNS);
+  const last = history.at(-1);
+  let keywords = extractKeywords(question);
+  const followUp = Boolean(last && isFollowUp(question, keywords));
+  if (last && followUp) {
+    keywords = [...new Set([...codeNames(last.answer), ...keywords, ...extractKeywords(last.question)])];
+  }
+  // Nombres de código a ubicar con búsqueda exacta: los de la pregunta y, si es repregunta, los de la respuesta anterior.
+  const names = [...new Set([...codeNamesInQuestion(question), ...(last && followUp ? functionNames(last.answer) : [])])];
   if (keywords.length === 0) throw new GuardianError("La pregunta es demasiado corta o genérica.");
 
   // Se busca desde la carpeta actual: en un monorepo, preguntar desde storefront-demo/
@@ -182,7 +271,9 @@ export async function ask(question: string, options: AskOptions): Promise<AskRes
   const selected = selectFiles(ranked, MAX_CONTEXT_CHARS);
   const files = selected.map((f) => `## ${f.path}\n\`\`\`\n${addLineNumbers(f.content)}\n\`\`\``).join("\n\n");
   const prompt = redactSecrets(
-    `# Pregunta\n\n${question}\n\n# Estructura del proyecto\n\n${buildTreeView(allFiles.map((f) => f.path))}\n\n# Archivos relevantes\n\n${files}` +
+    conversation(history) +
+      exactOccurrences(allFiles, names) +
+      `# Pregunta\n\n${question}\n\n# Estructura del proyecto\n\n${buildTreeView(allFiles.map((f) => f.path))}\n\n# Archivos relevantes\n\n${files}` +
       // Se repite al final: los modelos locales chicos "pierden" la pregunta si queda solo al principio.
       `\n\n# Recordá: respondé en español esta pregunta, citando archivo:línea\n\n${question}`,
   ).text;

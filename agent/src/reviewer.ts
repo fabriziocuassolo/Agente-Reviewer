@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { ReviewContext } from "./context.js";
-import type { MemoryEntry } from "./memory.js";
+import type { LearnedRule, MemoryEntry } from "./memory.js";
 import type { Skill } from "./skills.js";
 import { LLMError, type LLMProvider } from "./llm/types.js";
 import { makeFindingId, SEVERITIES, type Finding } from "./types.js";
@@ -30,7 +30,11 @@ Reglas:
 - Usá las convenciones del proyecto como criterio obligatorio; si el cambio viola una, decí cuál.
 - Citá el archivo y la línea del archivo NUEVO (los números que aparecen a la izquierda en "Archivos").
 - No reportes formato o estilo que resuelve un linter. No inventes problemas: si no hay, devolvé una lista vacía.
-- Máximo 10 hallazgos, los más importantes primero. Escribí en español rioplatense, claro y directo.
+- Reportá TODOS los problemas que encuentres, no solo el más grave. Recorré cada archivo modificado y cada
+  bloque del diff revisando: seguridad, dinero/precios, asincronía, validación de datos, manejo de errores,
+  tests faltantes y convenciones. Si el mismo problema aparece en varias líneas, un hallazgo por línea.
+- Ordená de más grave a menos grave (máximo 25). Escribí en español rioplatense, claro y directo.
+- Las "Reglas que enseñó el equipo" son obligatorias, igual que las convenciones.
 - La sugerencia debe decir QUÉ cambiar, idealmente con el código corregido en una línea.
 
 Severidades:
@@ -47,12 +51,25 @@ Respondé SOLO con JSON, sin texto adicional, con este formato exacto:
 export interface ReviewGuidance {
   skills: Skill[];
   exceptions: MemoryEntry[];
+  /** Reglas que el equipo enseñó con `guardian aprender`. */
+  learned?: LearnedRule[];
 }
 
-const NO_GUIDANCE: ReviewGuidance = { skills: [], exceptions: [] };
+const NO_GUIDANCE: ReviewGuidance = { skills: [], exceptions: [], learned: [] };
 
 export function buildPrompt(context: ReviewContext, guidance: ReviewGuidance = NO_GUIDANCE): string {
   const parts: string[] = [];
+  // Las reglas que enseñó el equipo van PRIMERO: los modelos chicos le dan más peso a lo que leen al principio.
+  if (guidance.learned && guidance.learned.length > 0) {
+    const list = guidance.learned
+      .map((r, i) => `${i + 1}. ${r.regla}${r.archivos ? ` (aplica a: ${r.archivos.join(", ")})` : ""}`)
+      .join("\n");
+    parts.push(
+      `## Reglas que enseñó el equipo (obligatorias)\n${list}\n\n` +
+        "Revisá el cambio contra CADA una de estas reglas, una por una. Si una se incumple, reportala como hallazgo " +
+        '(severidad "alto", categoría "regla del equipo") citando el número de regla.',
+    );
+  }
   if (context.conventions) parts.push(`## Convenciones del proyecto\n\n${context.conventions}`);
   for (const skill of guidance.skills) {
     parts.push(`## Criterios de revisión: ${skill.name}\n(aplica a: ${skill.matchedFiles.join(", ")})\n\n${skill.content}`);

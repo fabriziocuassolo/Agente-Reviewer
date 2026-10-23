@@ -17,6 +17,19 @@
   "context": {
     "maxChars": 80000
   },
+  "ia": {
+    "saltearSiHayCriticos": false
+  },
+  "reglas": [
+    {
+      "nombre": "sin-innerHTML",
+      "buscar": "\\.(innerHTML|outerHTML)\\s*=|insertAdjacentHTML\\(",
+      "archivos": ["public/**"],
+      "severidad": "alto",
+      "mensaje": "Se usa innerHTML/outerHTML/insertAdjacentHTML. Con datos del servidor o del usuario es una XSS (convención 2 de seguridad).",
+      "sugerencia": "Usá textContent o createElement (el helper el() de app.js)."
+    }
+  ],
   "skills": {
     "ecommerce-pricing": [
       "src/services/pricing.ts",

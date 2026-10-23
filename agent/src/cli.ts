@@ -2,13 +2,16 @@
 import { Command } from "commander";
 import pc from "picocolors";
 import { ask } from "./ask.js";
+import { addFixedRule, CONFIG_PATH } from "./config.js";
+import { startChat } from "./chat.js";
 import { join } from "node:path";
 import { GUARDIAN_HOME, loadGuardianEnv } from "./env.js";
-import { getRepoRoot } from "./git.js";
+import { getRepoRoot, git } from "./git.js";
 import { COMMAND_EXAMPLES, mainGuide, otherAIGuide } from "./guide.js";
 import { installHook, uninstallHook } from "./hook.js";
 import { providersStatus } from "./llm/provider.js";
-import { dismissFinding, MEMORY_PATH } from "./memory.js";
+import { dismissFinding, forgetRule, learnRule, loadLearned, MEMORY_PATH } from "./memory.js";
+import { findProject } from "./project.js";
 import { renderReport } from "./report.js";
 import { runReview } from "./review.js";
 import { GuardianError } from "./types.js";
@@ -80,12 +83,78 @@ program
   });
 
 program
-  .command("ask")
-  .description("Responde preguntas sobre el código del proyecto citando archivos y líneas")
-  .argument("<pregunta>", "tu pregunta sobre el código")
-  .option("--use <ia>", "gemini (o ia) | ollama (o local)")
+  .command("aprender")
+  .description("Le enseña una regla a Guardian: se la pasa a cualquier IA en cada revisión")
+  .argument("[regla]", 'la regla en tus palabras, ej: "Los precios nunca se calculan en el frontend"')
+  .option("--archivos <patrones>", 'solo para estos archivos, separados por coma (ej: "public/**,*.html")')
+  .option("--patron <regex>", 'regla FIJA: un patrón que se detecta siempre, sin IA (ej: "<script>")')
+  .option("--severidad <nivel>", "para reglas fijas: critico | alto | medio | bajo (por defecto alto)")
+  .option("--lista", "muestra las reglas aprendidas")
+  .option("--borrar <numero>", "borra la regla con ese número (ver --lista)")
+  .action((regla: string | undefined, options: { archivos?: string; patron?: string; severidad?: string; lista?: boolean; borrar?: string }) => {
+    const root = getRepoRoot(process.cwd());
+    if (!root) throw new GuardianError("Este directorio no está dentro de un repositorio git.");
+    const pending = git(["status", "--porcelain"], root)
+      .split("\n")
+      .map((l) => l.slice(3).trim())
+      .filter(Boolean);
+    const project = findProject(root, process.cwd(), pending);
+    const where = `${project.prefix}${MEMORY_PATH}`;
+
+    if (options.borrar) {
+      const removed = forgetRule(project.dir, Number(options.borrar));
+      console.log(pc.green(`✔ Regla borrada: "${removed.regla}"`));
+      return;
+    }
+    if (options.lista || !regla) {
+      const rules = loadLearned(project.dir);
+      if (rules.length === 0) {
+        console.log(pc.dim(`Todavía no hay reglas aprendidas en ${where}.`));
+        console.log(pc.dim('Enseñale una:  guardian aprender "Toda función nueva de precios lleva tests"'));
+        return;
+      }
+      console.log(pc.bold(`\nReglas aprendidas (${where})\n`));
+      rules.forEach((r, i) => console.log(`  ${i + 1}. ${r.regla}${r.archivos ? pc.dim(`  [${r.archivos.join(", ")}]`) : ""}`));
+      console.log(pc.dim("\nPara borrar una:  guardian aprender --borrar <número>\n"));
+      return;
+    }
+    const archivos = options.archivos?.split(",").map((p) => p.trim()).filter(Boolean);
+
+    // Con --patron es una regla FIJA: va a config.json y se detecta siempre, sin depender de la IA.
+    if (options.patron) {
+      const fixed = addFixedRule(project.dir, { mensaje: regla, buscar: options.patron, archivos, severidad: options.severidad });
+      console.log(pc.green(`✔ Regla fija "${fixed.nombre}": se detecta SIEMPRE, con cualquier IA o sin IA.`));
+      console.log(pc.dim(`  Busca /${fixed.buscar}/ en las líneas nuevas${fixed.archivos ? ` de ${fixed.archivos.join(", ")}` : ""} · severidad ${fixed.severidad}`));
+      console.log(pc.dim(`  Guardada en ${project.prefix}${CONFIG_PATH}. Commitealo para que la use todo el equipo.`));
+      return;
+    }
+
+    const rule = learnRule(project.dir, regla, archivos);
+    console.log(pc.green(`✔ Aprendido: "${rule.regla}"${rule.archivos ? ` (en ${rule.archivos.join(", ")})` : ""}`));
+    console.log(pc.dim(`  Guardado en ${where}. Desde la próxima revisión la usa cualquier IA (Gemini, Ollama u otra).`));
+    console.log(pc.dim("  Commitealo para que lo aproveche todo el equipo."));
+  });
+
+program
+  .command("chat")
+  .description("Charla sobre el código en la terminal: preguntás, repreguntás y cita archivo:línea")
+  .option("--use <ia>", "ia (Gemini) | local (Ollama) | una IA tuya del .env")
   .option("--model <nombre>", "modelo a usar con esa IA")
-  .action(async (question: string, options: { use?: string; model?: string }) => {
+  .action(async (options: { use?: string; model?: string }) => {
+    await startChat({ cwd: process.cwd(), use: options.use, model: options.model });
+  });
+
+program
+  .command("ask")
+  .description("Una pregunta suelta sobre el código (sin pregunta abre el chat)")
+  .argument("[pregunta]", "tu pregunta sobre el código; si no ponés nada, se abre el chat")
+  .option("--use <ia>", "ia (Gemini) | local (Ollama) | una IA tuya del .env")
+  .option("--model <nombre>", "modelo a usar con esa IA")
+  .action(async (question: string | undefined, options: { use?: string; model?: string }) => {
+    if (!question) {
+      await startChat({ cwd: process.cwd(), use: options.use, model: options.model });
+      return;
+    }
     const started = Date.now();
     const result = await ask(question, { cwd: process.cwd(), use: options.use, model: options.model });
     console.log(`\n${result.answer}\n`);

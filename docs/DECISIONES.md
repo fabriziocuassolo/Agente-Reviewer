@@ -142,6 +142,24 @@
     "limpio" 01 (filtro en minúsculas vs. categorías con su casing original). Se corrigió el
     escenario. Muestra que el revisor aporta incluso en cambios que parecían correctos.
 
+  Aprendizaje, monorepo, "todos los errores" y chat (a partir de pruebas del autor):
+  - Diagnóstico: el "JSON con información sensible" que marcó el modelo 7B era un FALSO positivo sobre
+    .guardian/memory.json (la memoria de Guardian). Arreglo: nunca mandar .guardian/ ni nombres de
+    binarios (PDF) a la IA. No se "enseñó" ese hallazgo: hubiera empeorado la revisión.
+  - Monorepo: Guardian tomaba config/convenciones/skills de la RAÍZ del repo, así que revisando la tienda
+    desde la raíz no cargaba sus reglas (XSS salía ALTO en vez de CRÍTICO). Ahora detecta el proyecto
+    (carpeta con .guardian/ o docs/CONVENTIONS.md) por la carpeta actual o por los archivos cambiados.
+  - "Quiero todos los errores": se invierte la decisión anterior. La IA revisa SIEMPRE (el secreto va
+    redactado) y el prompt pide recorrer cada archivo y reportar todo (máx. 25). El ahorro queda opcional:
+    ia.saltearSiHayCriticos. Medido: con 3 bugs en index.html, 7B y 14B encontraron los 3 (antes, 1).
+  - Aprendizaje sin fine-tuning, en 3 niveles: reglas en palabras (guardian aprender → prompt),
+    descartes (dismiss), reglas FIJAS (--patron → regex determinística en config.json).
+    Medido: la misma regla ("sin <script> inline") en palabras NO la aplicó ni 7B ni 14B; como regla
+    fija la detectaron ambos. Conclusión: lo innegociable va determinístico; la IA, para criterio.
+  - Chat (guardian chat / ask sin pregunta): historial de 4 turnos; las repreguntas suman los nombres
+    de funciones de la respuesta anterior; y una BÚSQUEDA EXACTA (sin IA) de dónde aparece cada nombre
+    se le pasa al modelo para que cite líneas reales. Medido: sin esto el 14B inventaba ubicaciones.
+
   Elegir y agregar IAs:
   - `--use replay|gemini|ollama` (alias ia/local) y `--model` por comando; prioridad: --use > .env > replay.
     Si la IA pedida no está lista, se corta ANTES de revisar con instrucciones (key, instalación, modelo).

@@ -29,6 +29,7 @@ export function formatMs(ms: number): string {
 export function renderReport(report: ReviewReport): string {
   const out: string[] = [];
   out.push("", pc.bold("🛡  Guardian · revisión de cambios"));
+  if (report.project) out.push(pc.dim(`Proyecto: ${report.project} (usa su configuración, convenciones, skills y memoria)`));
   out.push(pc.dim(`Comparando: ${report.changes.description} (${report.changes.files.length} archivo/s)`), "");
 
   if (report.checks.length > 0) {
@@ -94,6 +95,7 @@ function renderLLM({ llm }: ReviewReport): string {
       (llm.attempts > 1 ? ` · ${llm.attempts} intentos` : ""),
   ];
   if (llm.skills.length > 0) lines.push(`Skills aplicadas: ${llm.skills.join(", ")}`);
+  if (llm.learned > 0) lines.push(`Aprendizaje: ${llm.learned} regla(s) enseñadas por el equipo incluidas en el prompt`);
   if (llm.exceptions > 0) lines.push(`Memoria: ${llm.exceptions} excepción(es) conocida(s) incluidas en el prompt`);
   if (llm.redactions > 0) lines.push(`Privacidad: ${llm.redactions} secreto(s) redactado(s) antes de enviar el código`);
   if (llm.omitted.length > 0) lines.push(`No enviados al modelo: ${llm.omitted.join(", ")}`);

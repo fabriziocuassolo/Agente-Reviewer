@@ -229,6 +229,75 @@ caso se probó de punta a punta con un remoto local: el commit con secreto fue r
 
 ---
 
+---
+
+### Caso H — Varios errores juntos (¿los reporta TODOS?)
+
+**Edición** en `public/index.html`: debajo del párrafo del cupón (`<p>Envío gratis...</p>`), pegá:
+
+```html
+<p id="saludo"></p>
+<script>
+  const nombre = new URLSearchParams(location.search).get("nombre");
+  document.getElementById("saludo").innerHTML = "Hola " + nombre + "!";
+  const ADMIN_PASSWORD = "admin1234";
+  const descuento = parseFloat(nombre) * 0.1;
+</script>
+```
+
+**Esperado:** BLOQUEADO con **todos** los problemas: XSS (`innerHTML` con un dato de la URL), contraseña
+en el código, decimales para calcular un descuento y, si cargaste la regla del Caso I, `<script>` inline.
+
+**Resultado real** (desde la raíz del repo, 7B y 14B): ✅ los dos encontraron la XSS (CRÍTICO), la
+contraseña (CRÍTICO) y el `parseFloat` (ALTO). La línea `Proyecto: storefront-demo` confirma que usó
+las convenciones y skills de la tienda.
+
+---
+
+### Caso I — Enseñarle una regla: en palabras vs. fija
+
+```powershell
+# En palabras (la IA la recibe como criterio):
+guardian aprender "No se permiten scripts inline en el HTML: el JavaScript va en public/app.js" --archivos "public/**"
+
+# Fija (se detecta siempre, con cualquier IA o sin IA):
+guardian aprender "No se permiten scripts inline en el HTML" --patron "<script>" --archivos "public/**/*.html"
+
+guardian aprender --lista
+```
+
+Después repetí el Caso H.
+
+**Resultado real:** la regla **en palabras** llegó al prompt ("Aprendizaje: 1 regla"), pero **ni el 7B
+ni el 14B la aplicaron**. La regla **fija** la detectaron los dos (ALTO, `<script>` en la línea 22).
+Conclusión: lo innegociable conviene declararlo fijo; las reglas en palabras sirven como criterio extra
+y funcionan mejor con modelos grandes.
+
+---
+
+### Caso J — Chat con repreguntas
+
+```powershell
+cd storefront-demo
+guardian chat --use local --model qwen2.5-coder:14b
+```
+
+```
+vos › ¿Cómo se calcula el costo de envío?
+vos › ¿y dónde se usa esa función?
+vos › /fuentes
+vos › /salir
+```
+
+**Esperado:** la segunda respuesta entiende que "esa función" es `calculateShipping` y cita
+`src/services/pricing.ts:45` (dentro de `calculateTotals`) y los tests de `tests/pricing.test.ts`.
+
+**Resultado real:** ✅ 7B: correcto y completo (~6 s). ✅ 14B: correcto en lo principal (~11 s), y agrega
+`carts.ts`/`checkout.ts`, que usan la función de forma indirecta (vía `calculateTotals`).
+Sin la búsqueda exacta que Guardian le pasa al modelo, el 14B inventaba ubicaciones.
+
+---
+
 ## 3. Preguntas para `guardian ask`
 
 Corré desde `storefront-demo/` (así busca solo en la tienda):

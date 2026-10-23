@@ -7,7 +7,9 @@ import { decide, sortFindings } from "./gate.js";
 import { collectChanges, getRepoRoot } from "./git.js";
 import { prepareProvider } from "./llm/provider.js";
 import { RecordingProvider } from "./llm/replay.js";
-import { applyMemory, loadMemory, relevantExceptions, saveLastReview } from "./memory.js";
+import { customRuleFindings } from "./checks/rules.js";
+import { applyMemory, loadLearned, loadMemory, relevantExceptions, relevantLearned, saveLastReview } from "./memory.js";
+import { findProject, inProject } from "./project.js";
 import { loadSkills } from "./skills.js";
 import type { LLMProvider } from "./llm/types.js";
 import { reviewWithLLM } from "./reviewer.js";
@@ -44,8 +46,9 @@ export async function runReview(options: ReviewOptions): Promise<ReviewReport> {
   const root = getRepoRoot(options.cwd);
   if (!root) throw new GuardianError("Este directorio no está dentro de un repositorio git.");
 
-  const config = loadConfig(root);
-  const memory = loadMemory(root);
+  // En un monorepo, la configuración, convenciones, skills y memoria salen del proyecto
+  // (subcarpeta) que se está revisando, no de la raíz del repo.
+  const startProject = findProject(root, options.cwd);
   const timer = new StageTimer();
   const warnings: string[] = [];
 
@@ -60,8 +63,12 @@ export async function runReview(options: ReviewOptions): Promise<ReviewReport> {
 
   // 1. Recolector
   const changes = await timer.measure("Recolección", () =>
-    collectChanges(root, config.baseBranch, options.base, options.committedOnly),
+    collectChanges(root, loadConfig(startProject.dir).baseBranch, options.base, options.committedOnly),
   );
+  const project = findProject(root, options.cwd, changes.files);
+  const config = loadConfig(project.dir);
+  const memory = loadMemory(project.dir);
+  const learned = loadLearned(project.dir);
   if (changes.files.length === 0) {
     return {
       decision: "APROBADO",
@@ -78,19 +85,27 @@ export async function runReview(options: ReviewOptions): Promise<ReviewReport> {
   // 2. Chequeos determinísticos
   const deterministic = await timer.measure("Chequeos", async () => {
     const secretsStart = Date.now();
-    const secrets = findSecrets(parseAddedLines(changes.diff));
+    const addedLines = parseAddedLines(changes.diff);
+    const secrets = findSecrets(addedLines);
+    const ruleFindings = customRuleFindings(addedLines, config.rules, project);
     const secretsCheck: CheckResult = {
       name: "Secretos",
       status: secrets.length > 0 ? "fallo" : "ok",
       durationMs: Date.now() - secretsStart,
     };
 
-    const { checks: commands, skipped } = resolveCommandChecks(root, config);
-    const commandRun = await runCommandChecks(root, commands, config.checks.timeoutMs);
+    const rulesCheck: CheckResult[] =
+      config.rules.length > 0
+        ? [{ name: "Reglas del equipo", status: ruleFindings.length > 0 ? "fallo" : "ok", durationMs: 0, detail: `${config.rules.length} regla(s)` }]
+        : [];
+
+    // lint, tipos y tests se corren en la carpeta del proyecto (donde está su package.json)
+    const { checks: commands, skipped } = resolveCommandChecks(project.dir, config);
+    const commandRun = await runCommandChecks(project.dir, commands, config.checks.timeoutMs);
 
     return {
-      checks: [secretsCheck, ...commandRun.results, ...skipped],
-      findings: [...secretFindings(secrets), ...commandRun.findings] as Finding[],
+      checks: [secretsCheck, ...rulesCheck, ...commandRun.results, ...skipped],
+      findings: [...secretFindings(secrets), ...ruleFindings, ...commandRun.findings] as Finding[],
     };
   });
   const findings = [...deterministic.findings];
@@ -103,20 +118,30 @@ export async function runReview(options: ReviewOptions): Promise<ReviewReport> {
 
   if (options.llm === false) {
     warnings.push("Revisión con IA desactivada (--no-llm).");
-  } else if (hasCritical) {
-    // Si ya está bloqueado, llamar al modelo es gastar tiempo y cuota: primero hay que arreglar esto.
+  } else if (hasCritical && config.skipAiOnCritical) {
+    // Opcional (config.json → ia.saltearSiHayCriticos): si ya está bloqueado, no se gasta en la IA.
     warnings.push("Se omitió la revisión con IA: los chequeos determinísticos ya encontraron fallos críticos.");
   } else if (!provider) {
     warnings.push(`Se omitió la revisión con IA.\n${reason}`);
   } else {
     const { context, guidance } = await timer.measure("Contexto", () => {
-      const context = buildContext(root, changes, config.context.maxChars);
-      const { skills, warnings: skillWarnings } = loadSkills(root, config, context.changedFiles);
+      const context = buildContext(root, changes, config.context.maxChars, project);
+      const projectFiles = context.changedFiles.map((f) => inProject(project, f));
+      const { skills, warnings: skillWarnings } = loadSkills(project.dir, config, projectFiles);
       warnings.push(...skillWarnings);
-      return { context, guidance: { skills, exceptions: relevantExceptions(memory, context.changedFiles) } };
+      return {
+        context,
+        guidance: {
+          skills,
+          exceptions: relevantExceptions(memory, context.changedFiles),
+          learned: relevantLearned(learned, projectFiles),
+        },
+      };
     });
     const result = await timer.measure("Revisión IA", () => reviewWithLLM(provider, context, guidance));
-    findings.push(...result.findings);
+    // Si la IA repite algo que un chequeo fijo ya marcó en la misma línea (ej: el secreto), se muestra una vez.
+    const alreadyFound = new Set(findings.filter((f) => f.file && f.line).map((f) => `${f.file}:${f.line}`));
+    findings.push(...result.findings.filter((f) => !(f.file && f.line && alreadyFound.has(`${f.file}:${f.line}`))));
     warnings.push(...result.warnings);
     llmFailed = result.degraded;
     llm = {
@@ -124,6 +149,7 @@ export async function runReview(options: ReviewOptions): Promise<ReviewReport> {
       model: provider.model,
       skills: guidance.skills.map((s) => s.name),
       exceptions: guidance.exceptions.length,
+      learned: guidance.learned.length,
       inputTokens: result.inputTokens,
       outputTokens: result.outputTokens,
       attempts: result.attempts,
@@ -159,8 +185,9 @@ export async function runReview(options: ReviewOptions): Promise<ReviewReport> {
     warnings,
     timings: [...timer.timings, timer.total()],
     llm,
+    project: project.prefix.replace(/\/$/, ""),
   };
-  // Se guarda para que `guardian dismiss <id>` sepa a qué hallazgo se refiere el ID.
+  // Se guarda (en la raíz del repo) para que `guardian dismiss <id>` sepa a qué hallazgo se refiere el ID.
   saveLastReview(root, report);
   return report;
 }

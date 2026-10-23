@@ -188,20 +188,28 @@ Cada escenario aplica un cambio sobre la tienda y ejecuta `guardian review`:
 |-----------|--------|-------------------|
 | `01-clean` | Filtro por categoría con validación y tests | **APROBADO** |
 | `02-pricing-float` | Descuento mayorista con flotantes + cupón aplicado dos veces | **BLOQUEADO** (2 críticos) |
-| `03-security` | innerHTML con datos de usuario (XSS) + API key hardcodeada | **BLOQUEADO** (secreto, sin IA) |
+| `03-security` | innerHTML con datos de usuario (XSS) + API key hardcodeada | **BLOQUEADO** (secreto y regla fija sin-innerHTML, sin depender de la IA) |
 | `04-subtle` | `inventory.reserve()` sin `await` en nueva ruta de compra rápida | **BLOQUEADO** (1 crítico) |
 
 En el modo replay (sin modelo real) tarda ~2 s por escenario. Con Gemini, entre 10 y 60 s según el tamaño del cambio y la demanda del modelo (medido en la capa gratuita).
 
-### 3. Preguntale sobre el código
+### 3. Charlá con el código
 
 ```bash
-guardian ask "¿Cómo se calculan los descuentos con cupones?"
+cd storefront-demo
+guardian chat --use local        # o --use ia (Gemini)
 ```
 
-Te responde citando `archivo:línea`. Útil para onboarding o cuando no sabés por dónde empezar.
+```
+vos › ¿Cómo se calcula el costo de envío?
+guardian › Con calculateShipping en src/services/pricing.ts:31 ...
+vos › ¿y dónde se usa esa función?
+guardian › En src/services/pricing.ts:45 (calculateTotals) y en los tests de tests/pricing.test.ts ...
+```
 
-*Requiere un proveedor LLM (no funciona con replay).*
+Recuerda lo hablado, así que podés repreguntar ("¿y eso dónde se usa?"). Para ubicar código, Guardian hace una **búsqueda exacta sin IA** y se la pasa al modelo, para que cite líneas reales en vez de inventarlas. Comandos dentro del chat: `/fuentes`, `/nuevo`, `/salir`. Para una pregunta suelta: `guardian ask "..."`.
+
+*Requiere una IA real (no funciona con replay).*
 
 ### 4. Instalá el hook pre-push
 
@@ -327,6 +335,32 @@ Ejemplo completo de `config.json` (es el que usa la tienda de ejemplo, en [store
 
 No se pueden descartar fallos de lint, tipos o tests: se corrigen o se ajusta el comando.
 
+### Enseñarle a Guardian
+
+Guardian no se reentrena: aprende guardando el conocimiento del equipo **en el repo**, y se lo pasa a la IA en cada revisión. Si cambian de modelo (Gemini → Ollama → ChatGPT), lo aprendido sigue.
+
+| Cómo | Para qué | ¿Depende de la IA? |
+|---|---|---|
+| `guardian aprender "Los precios nunca se calculan en el frontend" --archivos "public/**"` | Criterios en tus palabras | Sí: los modelos grandes los siguen mejor que los chicos |
+| `guardian aprender "Sin scripts inline en el HTML" --patron "<script>" --archivos "public/**/*.html"` | **Regla fija**: un patrón que se detecta siempre | **No**: lo detecta cualquier modelo, o sin IA |
+| `guardian dismiss <id> "motivo"` | Falsos positivos que no se repiten | Filtro exacto + aviso a la IA |
+| `docs/CONVENTIONS.md`, `.guardian/skills/*.md` | Reglas de la empresa y criterios por área | Sí |
+
+`guardian aprender --lista` muestra lo aprendido y `guardian aprender --borrar <n>` borra una regla. Las reglas fijas quedan en `.guardian/config.json` → `"reglas"`, y se pueden editar a mano:
+
+```json
+"reglas": [
+  { "nombre": "sin-innerHTML", "buscar": "\\.(innerHTML|outerHTML)\\s*=", "archivos": ["public/**"],
+    "severidad": "alto", "mensaje": "innerHTML con datos es XSS", "sugerencia": "Usá textContent" }
+]
+```
+
+**Lo medido:** con modelos locales (Ollama 7B y 14B), una regla escrita en palabras no siempre se aplica. La misma regla como regla fija la detectaron los dos modelos. Por eso conviene que lo que no se puede escapar nunca vaya como regla fija.
+
+### Repositorios con varios proyectos
+
+Si el repo tiene varios proyectos (como este: `agent/` y `storefront-demo/`), Guardian usa la configuración, convenciones, skills y memoria **del proyecto revisado**: el que contiene la carpeta donde estás parado o, si corrés desde la raíz, el que contiene los archivos cambiados. El reporte lo indica en la línea `Proyecto: ...`.
+
 ---
 
 ## GitHub Action
@@ -353,8 +387,9 @@ Para activarla: **Settings → Secrets and variables → Actions → New reposit
 3. **Los modelos locales son menos precisos que Gemini:** `qwen2.5-coder:7b` no detecta los bugs más sutiles y ambos (7B y 14B) generan falsos positivos en cambios correctos. Ver [docs/CASOS-DE-PRUEBA.md](docs/CASOS-DE-PRUEBA.md).
 4. **Contexto acotado:** se envían el diff, los archivos modificados y sus imports directos, hasta ~80.000 caracteres.
 5. **El revisor sugiere correcciones pero no las valida** (no ejecuta el arreglo propuesto).
-6. **`ask` busca por palabras clave**, sin búsqueda semántica ni memoria entre preguntas.
-7. Si en el chequeo determinístico aparece un fallo crítico (por ejemplo, un secreto), no se llama al LLM: otros problemas del mismo cambio aparecen recién en la siguiente revisión.
+6. **El chat y `ask` buscan por palabras clave** (más una búsqueda exacta de nombres de código), sin búsqueda semántica. Los modelos locales chicos a veces mezclan usos directos con indirectos.
+7. **La IA revisa siempre**, aunque los chequeos fijos ya hayan encontrado algo crítico, para mostrar todos los problemas juntos. Para ahorrar costo con IAs pagas: `"ia": { "saltearSiHayCriticos": true }` en `.guardian/config.json`.
+8. **Las reglas aprendidas en palabras dependen del modelo:** los modelos locales no siempre las aplican. Lo crítico conviene declararlo como regla fija (`--patron`).
 
 ---
 
@@ -377,8 +412,15 @@ guardian ia
 Muestra qué IA está activa por defecto y si replay, Gemini y Ollama están listas.
 
 ```bash
-guardian ask "<pregunta>" [--use gemini|ollama] [--model <nombre>]
+guardian chat [--use ia|local|<tu-ia>] [--model <nombre>]
+guardian ask "<pregunta>" [--use ...]   # una pregunta suelta; sin pregunta abre el chat
 ```
+
+```bash
+guardian aprender "<regla>" [--archivos "<patrones>"] [--patron "<regex>"] [--severidad alto]
+guardian aprender --lista | --borrar <n>
+```
+Le enseña reglas a Guardian: en palabras (para la IA) o fijas con `--patron` (se detectan siempre).
 Responde citando archivo:línea. Requiere un LLM configurado.
 
 ```bash

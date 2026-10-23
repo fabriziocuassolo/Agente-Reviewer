@@ -6,7 +6,7 @@ Cada escenario es un patch que simula el cambio de un desarrollador sobre `store
 | --- | --- | --- | --- |
 | `01-clean` | Filtro por categoría con validación zod, sin `innerHTML` y con tests | — | APROBADO |
 | `02-pricing-float` | Descuento mayorista calculado en pesos con flotantes; el cupón se aplica dos veces | Agente IA (los tests no cubren compras de 10+ unidades) | BLOQUEADO |
-| `03-security` | Tarjetas armadas con `innerHTML` (XSS) y API key hardcodeada | Chequeo de secretos (determinístico) | BLOQUEADO |
+| `03-security` | Tarjetas armadas con `innerHTML` (XSS) y API key hardcodeada | Chequeo de secretos y regla fija `sin-innerHTML` (determinísticos), más la IA | BLOQUEADO |
 | `04-subtle` | Nueva ruta "comprar ahora" que reserva stock sin `await` | Agente IA (compila, pasa lint y tests) | ADVERTENCIA o BLOQUEADO |
 
 ```bash
@@ -19,4 +19,4 @@ La copia de trabajo queda en `.demo-work/<escenario>`, ignorada por git: podés 
 y seguir probando (`cd .demo-work/04-subtle && guardian review`).
 
 `recordings/` tiene respuestas reales de Gemini que usa `LLM_PROVIDER=replay`.
-`03-security` no tiene grabación porque el secreto bloquea antes de llamar al modelo.
+`03-security` todavía no tiene grabación de la IA (hasta la versión anterior, el secreto bloqueaba antes de llamarla): regrabá con `npm run demo -- all --record --use gemini`.

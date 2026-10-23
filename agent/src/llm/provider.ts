@@ -82,8 +82,8 @@ export function createProvider(env: NodeJS.ProcessEnv = process.env, options: Pr
       provider = new OllamaProvider(
         env.OLLAMA_HOST?.trim() || DEFAULT_OLLAMA_HOST,
         options.model || env.OLLAMA_MODEL?.trim() || DEFAULT_OLLAMA_MODEL,
-        // Un modelo local en CPU puede tardar bastante más que una API.
-        Number(env.LLM_TIMEOUT_MS) || 180_000,
+        // Un modelo local puede tardar bastante más que una API (cargarlo en memoria, CPU): mínimo 3 min.
+        Math.max(Number(env.LLM_TIMEOUT_MS) || 0, 180_000),
       );
       break;
     case "replay":

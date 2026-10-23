@@ -51,6 +51,8 @@ export interface ReviewReport {
   llm?: LLMUsage;
   /** Hallazgos ocultados porque el equipo ya los descartó (memoria). */
   dismissed: Finding[];
+  /** Proyecto revisado, relativo a la raíz del repo ("" = la raíz). En un monorepo, su subcarpeta. */
+  project?: string;
 }
 
 export interface LLMUsage {
@@ -67,6 +69,8 @@ export interface LLMUsage {
   skills: string[];
   /** Excepciones de la memoria incluidas en el prompt. */
   exceptions: number;
+  /** Reglas aprendidas (guardian aprender) incluidas en el prompt. */
+  learned: number;
   /** true si la llamada falló y no hubo revisión de IA. */
   failed: boolean;
   /** Archivo donde se guardó la grabación (solo con --record). */

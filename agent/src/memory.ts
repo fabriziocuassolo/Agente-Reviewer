@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import ignore from "ignore";
 import { z } from "zod";
 import { GuardianError, type Finding, type ReviewReport } from "./types.js";
 
@@ -29,17 +30,75 @@ const entrySchema = z.object({
 });
 export type MemoryEntry = z.infer<typeof entrySchema>;
 
-const memorySchema = z.object({ dismissed: z.array(entrySchema) });
+/** Regla que el equipo le enseñó a Guardian con `guardian aprender`. */
+const learnedSchema = z.object({
+  regla: z.string().min(1),
+  /** Patrones de archivos donde aplica (sintaxis .gitignore); vacío = todos. */
+  archivos: z.array(z.string()).optional(),
+  fecha: z.string(),
+});
+export type LearnedRule = z.infer<typeof learnedSchema>;
+
+const memorySchema = z.object({
+  dismissed: z.array(entrySchema).default([]),
+  aprendido: z.array(learnedSchema).default([]),
+});
+type MemoryFile = z.infer<typeof memorySchema>;
+
+function readMemoryFile(root: string): MemoryFile {
+  const path = join(root, MEMORY_PATH);
+  if (!existsSync(path)) return { dismissed: [], aprendido: [] };
+  const parsed = memorySchema.safeParse(JSON.parse(readFileSync(path, "utf8")));
+  if (!parsed.success) throw new GuardianError(`${MEMORY_PATH} tiene un formato inválido.`);
+  return parsed.data;
+}
 
 // Los chequeos de comandos son hechos, no opiniones: no se descartan, se arreglan.
 const NOT_DISMISSABLE = new Set(["lint", "tipos", "tests"]);
 
 export function loadMemory(root: string): MemoryEntry[] {
-  const path = join(root, MEMORY_PATH);
-  if (!existsSync(path)) return [];
-  const parsed = memorySchema.safeParse(JSON.parse(readFileSync(path, "utf8")));
-  if (!parsed.success) throw new GuardianError(`${MEMORY_PATH} tiene un formato inválido.`);
-  return parsed.data.dismissed;
+  return readMemoryFile(root).dismissed;
+}
+
+// ---------------------------------------------------------------------------
+// Aprendizaje: reglas en lenguaje natural que se le pasan a CUALQUIER modelo.
+// No es reentrenar la IA: es conocimiento del equipo, versionado en el repo,
+// que viaja en cada revisión. Si mañana cambian de modelo, lo aprendido sigue.
+
+export function loadLearned(root: string): LearnedRule[] {
+  return readMemoryFile(root).aprendido;
+}
+
+export function learnRule(root: string, regla: string, archivos?: string[]): LearnedRule {
+  if (regla.trim().length < 10) {
+    throw new GuardianError("Escribí la regla con un poco más de detalle (al menos 10 caracteres).");
+  }
+  const memory = readMemoryFile(root);
+  const rule: LearnedRule = {
+    regla: regla.trim(),
+    ...(archivos && archivos.length > 0 ? { archivos } : {}),
+    fecha: new Date().toISOString().slice(0, 10),
+  };
+  writeJson(root, MEMORY_PATH, { ...memory, aprendido: [...memory.aprendido, rule] });
+  return rule;
+}
+
+/** Reglas aprendidas que aplican a este cambio (las generales + las de sus archivos). */
+export function relevantLearned(rules: LearnedRule[], projectFiles: string[]): LearnedRule[] {
+  return rules.filter((rule) => {
+    if (!rule.archivos || rule.archivos.length === 0) return true;
+    const matcher = ignore().add(rule.archivos);
+    return projectFiles.some((file) => matcher.ignores(file));
+  });
+}
+
+/** Borra la regla número `index` (empieza en 1, como se muestra en la lista). */
+export function forgetRule(root: string, index: number): LearnedRule {
+  const memory = readMemoryFile(root);
+  const rule = memory.aprendido[index - 1];
+  if (!rule) throw new GuardianError(`No existe la regla ${index}. Mirá la lista con: guardian aprender --lista`);
+  writeJson(root, MEMORY_PATH, { ...memory, aprendido: memory.aprendido.filter((_, i) => i !== index - 1) });
+  return rule;
 }
 
 function writeJson(root: string, relativePath: string, data: unknown) {
@@ -88,7 +147,10 @@ export function dismissFinding(root: string, id: string, reason: string): Memory
     );
   }
 
-  const memory = loadMemory(root);
+  // La memoria se guarda en el proyecto revisado (en un monorepo, su subcarpeta).
+  const memoryDir = join(root, last.project ?? "");
+  const file = readMemoryFile(memoryDir);
+  const memory = file.dismissed;
   if (memory.some((m) => m.id === id)) throw new GuardianError(`El hallazgo ${id} ya estaba descartado.`);
 
   const entry: MemoryEntry = {
@@ -99,6 +161,6 @@ export function dismissFinding(root: string, id: string, reason: string): Memory
     reason: reason.trim(),
     date: new Date().toISOString().slice(0, 10),
   };
-  writeJson(root, MEMORY_PATH, { dismissed: [...memory, entry] });
+  writeJson(memoryDir, MEMORY_PATH, { ...file, dismissed: [...memory, entry] });
   return entry;
 }
