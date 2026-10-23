@@ -4,6 +4,7 @@ import pc from "picocolors";
 import { ask } from "./ask.js";
 import { loadGuardianEnv } from "./env.js";
 import { getRepoRoot } from "./git.js";
+import { installHook, uninstallHook } from "./hook.js";
 import { dismissFinding, MEMORY_PATH } from "./memory.js";
 import { renderReport } from "./report.js";
 import { runReview } from "./review.js";
@@ -56,6 +57,28 @@ program
   .action(async (question: string) => {
     const answer = await ask(question, { cwd: process.cwd() });
     console.log(answer);
+  });
+
+program
+  .command("install-hook")
+  .description("Instala el hook pre-push que ejecuta guardian review antes de cada push")
+  .action(() => {
+    const root = getRepoRoot(process.cwd());
+    if (!root) throw new GuardianError("Este directorio no está dentro de un repositorio git.");
+    const path = installHook(root);
+    console.log(pc.green(`✔ Hook instalado: ${path}`));
+    console.log(pc.dim("  Ahora guardian review se ejecuta automáticamente antes de cada push."));
+    console.log(pc.dim("  Para saltear el hook una sola vez: git push --no-verify"));
+  });
+
+program
+  .command("uninstall-hook")
+  .description("Desinstala el hook pre-push de guardian")
+  .action(() => {
+    const root = getRepoRoot(process.cwd());
+    if (!root) throw new GuardianError("Este directorio no está dentro de un repositorio git.");
+    uninstallHook(root);
+    console.log(pc.green("✔ Hook desinstalado"));
   });
 
 program.parseAsync().catch((error: unknown) => {

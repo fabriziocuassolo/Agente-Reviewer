@@ -1,0 +1,104 @@
+name: Guardian Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # necesario para que git diff vea el historial
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Ejecutar guardian review
+        id: review
+        env:
+          LLM_PROVIDER: ${{ secrets.GUARDIAN_LLM_PROVIDER || 'gemini' }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ secrets.GEMINI_MODEL }}
+          OLLAMA_HOST: ${{ secrets.OLLAMA_HOST }}
+          OLLAMA_MODEL: ${{ secrets.OLLAMA_MODEL }}
+        run: |
+          npx guardian review --json > review.json || true
+          echo "report<<EOF" >> $GITHUB_OUTPUT
+          cat review.json >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Comentar en el PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const report = JSON.parse(`${{ steps.review.outputs.report }}`);
+
+            const emoji = {
+              APROBADO: '✅',
+              ADVERTENCIA: '⚠️',
+              BLOQUEADO: '❌'
+            };
+
+            const severityEmoji = {
+              critico: '🔴',
+              alto: '🟠',
+              medio: '🟡',
+              bajo: '⚪'
+            };
+
+            let body = `## ${emoji[report.decision]} Guardian · ${report.decision}\n\n`;
+
+            if (report.gate.reason) {
+              body += `**${report.gate.reason}**\n\n`;
+            }
+
+            if (report.findings.length > 0) {
+              body += `### Hallazgos (${report.findings.length})\n\n`;
+              for (const f of report.findings.slice(0, 10)) {
+                const file = f.file ? `\`${f.file}:${f.line}\`` : '(general)';
+                body += `${severityEmoji[f.severity]} **${f.severity.toUpperCase()}** ${file} · ${f.category}\n`;
+                body += `> ${f.explanation}\n\n`;
+                if (f.suggestion) {
+                  body += `💡 ${f.suggestion}\n\n`;
+                }
+              }
+              if (report.findings.length > 10) {
+                body += `_... y ${report.findings.length - 10} más. Corré \`guardian review\` localmente para ver todos._\n\n`;
+              }
+            } else {
+              body += '✨ No se encontraron problemas.\n\n';
+            }
+
+            if (report.llm) {
+              body += `<details><summary>ℹ️ Detalles</summary>\n\n`;
+              body += `- **Modelo**: ${report.llm.provider} · ${report.llm.model}\n`;
+              body += `- **Tokens**: ${report.llm.inputTokens} entrada / ${report.llm.outputTokens} salida\n`;
+              if (report.llm.skills?.length) {
+                body += `- **Skills**: ${report.llm.skills.join(', ')}\n`;
+              }
+              body += `</details>\n\n`;
+            }
+
+            body += `---\n_Generado por [Guardian](https://github.com/anthropics/guardian) · ${report.changes.description}_`;
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body
+            });
+
+            // Exit code 1 si está bloqueado, para que el check de GitHub lo marque en rojo
+            if (report.decision === 'BLOQUEADO') {
+              core.setFailed('Guardian bloqueó este cambio. Revisá los hallazgos críticos.');
+            }
