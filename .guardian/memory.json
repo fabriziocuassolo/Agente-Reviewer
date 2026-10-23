@@ -1,0 +1,12 @@
+{
+  "dismissed": [
+    {
+      "id": "G-d8bc82",
+      "file": "docs/Guia-Guardian.pdf",
+      "category": "seguridad",
+      "pattern": "Se ha añadido un archivo PDF sin revisión que podría contener información sensible o inadecuada.",
+      "reason": "es solo una prueba",
+      "date": "2026-10-23"
+    }
+  ]
+}
