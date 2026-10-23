@@ -22,6 +22,9 @@ function hookScript(nodePath: string, cliPath: string): string {
   return `#!/bin/sh
 ${HOOK_MARKER}
 # Instalado con \`guardian install-hook\`. Para saltearlo una vez: git push --no-verify
+# Guardian ya revisó (corrección automática con commit + push): no se revisa dos veces.
+if [ -n "$GUARDIAN_SKIP_HOOK" ]; then exit 0; fi
+
 NODE="${node}"
 CLI="${cli}"
 

@@ -2,6 +2,7 @@ import { createInterface } from "node:readline";
 import pc from "picocolors";
 import { ask, type ChatTurn } from "./ask.js";
 import { prepareProvider } from "./llm/provider.js";
+import { describeProvider } from "./menu.js";
 import { GuardianError } from "./types.js";
 
 export interface ChatOptions {
@@ -36,7 +37,8 @@ export async function startChat(options: ChatOptions): Promise<void> {
 
   console.log("");
   console.log(pc.bold("💬 Guardian · chat sobre tu código"));
-  console.log(pc.dim(`IA: ${provider.name} · ${provider.model} · carpeta: ${options.cwd}`));
+  console.log(describeProvider(provider));
+  console.log(pc.dim(`Carpeta: ${options.cwd}`));
   console.log(pc.dim('Preguntá lo que quieras, por ejemplo: "¿cómo se calcula el envío?" y después "¿y dónde se usa?"'));
   console.log(HELP);
   console.log("");

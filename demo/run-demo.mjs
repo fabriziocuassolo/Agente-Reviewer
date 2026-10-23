@@ -34,6 +34,9 @@ for (let i = 0; i < args.length; i++) {
     target = args[i];
   }
 }
+// La demo es reproducible: usa replay salvo que pidas otra IA con --use
+// (aunque tengas guardada otra IA como preferencia personal).
+if (!reviewFlags.includes("--use")) reviewFlags.push("--use", process.env.LLM_PROVIDER || "replay");
 
 if (!existsSync(CLI)) {
   console.error("No encuentro agent/dist/cli.js. Corré `npm install` en la raíz (compila el CLI).");

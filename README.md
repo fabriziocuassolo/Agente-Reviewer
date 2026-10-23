@@ -50,6 +50,21 @@ cp .env.example .env
 
 ---
 
+## Uso diario (lo más simple)
+
+```bash
+guardian                                        # menú: revisar, revisar y corregir, preguntar, elegir IA
+guardian "revisá mis cambios con la IA local"   # o decilo en tus palabras
+guardian "corregí los errores"
+guardian "¿dónde se calcula el envío?"
+```
+
+- **La primera vez** aparece un menú para elegir la IA: replay, IA local (modelo chico o grande) o un proveedor (Gemini, Claude, Grok, GPT u otra). Si no está configurada, te explica cómo hacerlo. La elección se guarda; para cambiarla: `guardian ia`.
+- **Siempre se avisa** con qué IA se trabaja: `🤖 Usando: IA local · Ollama · qwen2.5-coder:14b`.
+- **Corrección automática:** después de revisar, Guardian ofrece corregir. Guarda una copia de cada archivo, corrige, **vuelve a revisar para validar** y te muestra el diff. Elegís: *commit + push*, *deshacer* (todo vuelve exactamente a como estaba) o *dejarlo sin commitear*. Si sigue BLOQUEADO, recomienda deshacer y pide doble confirmación para subir.
+
+---
+
 ## Elegir la IA desde la terminal
 
 Por defecto Guardian usa **replay** (respuestas grabadas, sin key ni internet). Para cualquier comando podés elegir otra IA con `--use`:

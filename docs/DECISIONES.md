@@ -142,6 +142,43 @@
     "limpio" 01 (filtro en minúsculas vs. categorías con su casing original). Se corrigió el
     escenario. Muestra que el revisor aporta incluso en cambios que parecían correctos.
 
+  Simplificación del uso y corrección automática (pedidos del autor):
+  - Pedido: "tiene muchos comandos". Propuesta adoptada, en 3 niveles de menor a mayor esfuerzo:
+    1) `guardian` solo → menú principal (revisar, revisar y corregir, preguntar, elegir IA, ayuda).
+    2) Lenguaje natural: `guardian "revisá mis cambios con la IA local"` → review --use ollama.
+       Enrutador por palabras clave, SIN IA: instantáneo, gratis, predecible y testeable; si no reconoce
+       una intención, lo trata como pregunta sobre el código. Muestra el comando equivalente ("→ guardian
+       review --use ollama") para que la persona aprenda los comandos sin memorizarlos.
+       Alternativa descartada: interpretar con la IA → lento, cuesta tokens, y con replay no funcionaría.
+    3) Comandos explícitos para quien los prefiera (y para scripts/CI).
+  - Menú de IA (pedido del autor): 1) replay 2) IA local → modelo más chico o más grande (según los
+    modelos instalados en Ollama, por tamaño) 3) proveedor → Gemini, Claude, Grok, GPT u Otra.
+    Si la elegida no está configurada, explica cómo (y ofrece pegar la clave ahí mismo y la escribe en
+    el .env); si está configurada, la usa y empieza.
+  - La elección se GUARDA (pedido del autor) en ~/.guardian-preferencias.json (carpeta del usuario, no el
+    repo: es una preferencia personal). Orden: --use > elección guardada > .env > replay. `guardian ia`
+    la cambia. La primera vez que se corre sin elección, aparece el menú.
+  - Siempre se avisa con qué IA se trabaja: "🤖 Usando: IA local · Ollama · modelo (privada...)".
+  - El menú solo aparece si hay una persona en la terminal (TTY). En el hook, CI, --json o con entrada
+    redirigida no se pregunta nada. La demo fuerza replay salvo --use, para ser reproducible.
+  - Corrección automática (pedido del autor): tras la revisión, ofrece corregir. Flujo:
+    snapshot de cada archivo → la IA reescribe solo lo necesario → se VALIDA volviendo a revisar
+    (hallazgos antes/después y si pasan los tests) → diff visible → la persona elige:
+    commit + push | deshacer (rollback exacto a la foto) | dejar sin commitear. Por defecto: deshacer.
+    Esto cubre la capacidad 2 del reto (detectar, corregir y VALIDAR la corrección).
+  - Rollback con snapshot propio en memoria (no git stash): restaura byte a byte y no toca los cambios
+    del desarrollador. Verificado con hash del archivo antes/después.
+  - Hallazgo al probar: el 14B "corrigió" una contraseña del frontend con process.env (que en el navegador
+    no existe) y la validación dio BLOQUEADO igual. Medidas: (a) se le avisa a la IA cuando el archivo
+    corre en el navegador; (b) si tras corregir sigue BLOQUEADO, el push se marca "NO recomendado" y pide
+    una segunda confirmación (por defecto no → rollback). Nunca se sube nada sin elección explícita.
+  - Commit + push agrega solo los archivos revisados y los corregidos (nunca `git add -A`), con un mensaje
+    que lista cada corrección; el push no vuelve a disparar el hook (GUARDIAN_SKIP_HOOK).
+  - No se ofrece corrección automática dentro del hook pre-push (no hay terminal interactiva): sugiere
+    correr `guardian review`.
+  - Limitación medida: con modelos locales la validación es ruidosa (el 14B volvió a reportar "falta await"
+    sobre la línea ya corregida). La señal dura es: tests y chequeos determinísticos.
+
   Aprendizaje, monorepo, "todos los errores" y chat (a partir de pruebas del autor):
   - Diagnóstico: el "JSON con información sensible" que marcó el modelo 7B era un FALSO positivo sobre
     .guardian/memory.json (la memoria de Guardian). Arreglo: nunca mandar .guardian/ ni nombres de

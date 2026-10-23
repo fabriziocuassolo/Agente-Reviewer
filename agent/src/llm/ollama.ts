@@ -23,10 +23,15 @@ export class OllamaProvider implements LLMProvider {
 
   /** Modelos instalados en Ollama, o null si Ollama no responde. */
   async listModels(): Promise<string[] | null> {
+    return (await this.listModelsWithSize())?.map((m) => m.name) ?? null;
+  }
+
+  /** Modelos instalados con su tamaño en bytes (para ofrecer "el más chico" y "el más grande"). */
+  async listModelsWithSize(): Promise<{ name: string; size: number }[] | null> {
     try {
       const response = await fetch(`${this.host.replace(/\/$/, "")}/api/tags`, { signal: AbortSignal.timeout(3_000) });
-      const data = (await response.json()) as { models?: { name: string }[] };
-      return (data.models ?? []).map((m) => m.name);
+      const data = (await response.json()) as { models?: { name: string; size?: number }[] };
+      return (data.models ?? []).map((m) => ({ name: m.name, size: m.size ?? 0 }));
     } catch {
       return null;
     }

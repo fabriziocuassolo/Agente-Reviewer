@@ -11,7 +11,9 @@ describe("ayuda para principiantes", () => {
   it("explica comandos, cómo elegir cada IA y qué hacer si algo falla", () => {
     const guide = mainGuide();
     for (const text of [
-      "PRIMEROS PASOS",
+      "LO ÚNICO QUE NECESITÁS SABER",
+      "CORRECCIÓN AUTOMÁTICA",
+      "guardian \"revisá mis cambios\"",
       "guardian review",
       "guardian ask",
       "guardian dismiss",

@@ -1,26 +1,24 @@
 #!/usr/bin/env node
 import { Command } from "commander";
-import pc from "picocolors";
-import { ask } from "./ask.js";
-import { addFixedRule, CONFIG_PATH } from "./config.js";
-import { startChat } from "./chat.js";
 import { join } from "node:path";
+import pc from "picocolors";
+import { askCommand, iaCommand, reviewCommand, type ReviewCliOptions } from "./actions.js";
+import { addFixedRule, CONFIG_PATH } from "./config.js";
 import { GUARDIAN_HOME, loadGuardianEnv } from "./env.js";
 import { getRepoRoot, git } from "./git.js";
 import { COMMAND_EXAMPLES, mainGuide, otherAIGuide } from "./guide.js";
 import { installHook, uninstallHook } from "./hook.js";
-import { providersStatus } from "./llm/provider.js";
 import { dismissFinding, forgetRule, learnRule, loadLearned, MEMORY_PATH } from "./memory.js";
+import { choose, isInteractive, terminalAsker } from "./menu.js";
+import { routeNaturalLanguage } from "./nl.js";
 import { findProject } from "./project.js";
-import { renderReport } from "./report.js";
-import { runReview } from "./review.js";
 import { GuardianError } from "./types.js";
 
 loadGuardianEnv();
 
 const USE_HELP =
-  "qué IA usar: replay (grabada, por defecto) · ia o gemini (nube) · local u ollama (tu máquina). " +
-  "Si no está lista, te explica cómo configurarla";
+  "qué IA usar: replay · ia o gemini (nube) · local u ollama (tu máquina) · claude, chatgpt, grok u otra tuya. " +
+  "Si no ponés nada, usa la que elegiste en el menú";
 
 // Títulos de la ayuda de commander, en castellano.
 const HELP_TITLES: Record<string, string> = {
@@ -45,41 +43,41 @@ program
   .description("Revisa los cambios actuales y decide si están listos: APROBADO / ADVERTENCIA / BLOQUEADO")
   .option("--use <ia>", USE_HELP)
   .option("--model <nombre>", "modelo a usar con esa IA (ej: qwen2.5-coder:14b, gemini-3.8-flash)")
+  .option("--corregir", "intenta corregir automáticamente los problemas (te muestra los cambios y decidís)")
   .option("--base <ref>", "comparar contra esta rama o commit (por defecto se detecta solo)")
   .option("--json", "salida en JSON para máquinas (CI, GitHub Action)")
   .option("--no-llm", "sin IA: solo los controles automáticos (rápido, gratis, sin internet)")
   .option("--record", "graba las respuestas del modelo real en demo/recordings para el modo replay")
   .option("--pre-push", "revisa solo los commits (no los cambios sin commitear); lo usa el hook")
-  .action(async (options: { base?: string; json?: boolean; llm: boolean; record?: boolean; prePush?: boolean; use?: string; model?: string }) => {
-    const report = await runReview({
-      cwd: process.cwd(),
-      base: options.base,
-      llm: options.llm,
-      record: options.record,
-      committedOnly: options.prePush,
-      use: options.use,
-      model: options.model,
-    });
-    if (options.json) {
-      console.log(JSON.stringify(report, null, 2));
-    } else {
-      console.log(renderReport(report));
-    }
-    // Exit code 1 si está bloqueado: así el hook pre-push y la CI pueden cortar.
-    process.exitCode = report.decision === "BLOQUEADO" ? 1 : 0;
+  .action(async (options: ReviewCliOptions) => {
+    await reviewCommand(options);
   });
 
 program
-  .command("dismiss")
-  .description("Marca un hallazgo de la última revisión como falso positivo y lo guarda en la memoria del equipo")
-  .argument("<id>", "ID del hallazgo (ej: G-3f2a1c)")
-  .argument("<motivo>", "por qué no aplica (lo va a leer el resto del equipo)")
-  .action((id: string, reason: string) => {
-    const root = getRepoRoot(process.cwd());
-    if (!root) throw new GuardianError("Este directorio no está dentro de un repositorio git.");
-    const entry = dismissFinding(root, id, reason);
-    console.log(pc.green(`✔ ${entry.id} descartado: "${entry.reason}"`));
-    console.log(pc.dim(`  Guardado en ${MEMORY_PATH}. Commitealo para que lo aproveche todo el equipo.`));
+  .command("chat")
+  .description("Charla sobre el código en la terminal: preguntás, repreguntás y cita archivo:línea")
+  .option("--use <ia>", USE_HELP)
+  .option("--model <nombre>", "modelo a usar con esa IA")
+  .action(async (options: { use?: string; model?: string }) => {
+    await askCommand(undefined, options);
+  });
+
+program
+  .command("ask")
+  .description("Una pregunta suelta sobre el código (sin pregunta abre el chat)")
+  .argument("[pregunta]", "tu pregunta sobre el código; si no ponés nada, se abre el chat")
+  .option("--use <ia>", USE_HELP)
+  .option("--model <nombre>", "modelo a usar con esa IA")
+  .action(async (question: string | undefined, options: { use?: string; model?: string }) => {
+    await askCommand(question, options);
+  });
+
+program
+  .command("ia")
+  .description("Muestra la IA elegida y el estado de cada opción; te deja elegir otra con un menú")
+  .option("--estado", "solo mostrar el estado, sin preguntar")
+  .action(async (options: { estado?: boolean }) => {
+    await iaCommand(options);
   });
 
 program
@@ -136,48 +134,16 @@ program
   });
 
 program
-  .command("chat")
-  .description("Charla sobre el código en la terminal: preguntás, repreguntás y cita archivo:línea")
-  .option("--use <ia>", "ia (Gemini) | local (Ollama) | una IA tuya del .env")
-  .option("--model <nombre>", "modelo a usar con esa IA")
-  .action(async (options: { use?: string; model?: string }) => {
-    await startChat({ cwd: process.cwd(), use: options.use, model: options.model });
-  });
-
-program
-  .command("ask")
-  .description("Una pregunta suelta sobre el código (sin pregunta abre el chat)")
-  .argument("[pregunta]", "tu pregunta sobre el código; si no ponés nada, se abre el chat")
-  .option("--use <ia>", "ia (Gemini) | local (Ollama) | una IA tuya del .env")
-  .option("--model <nombre>", "modelo a usar con esa IA")
-  .action(async (question: string | undefined, options: { use?: string; model?: string }) => {
-    if (!question) {
-      await startChat({ cwd: process.cwd(), use: options.use, model: options.model });
-      return;
-    }
-    const started = Date.now();
-    const result = await ask(question, { cwd: process.cwd(), use: options.use, model: options.model });
-    console.log(`\n${result.answer}\n`);
-    if (result.sources.length > 0) {
-      console.log(pc.dim(`Archivos consultados: ${result.sources.join(", ")}`));
-    }
-    const tokens = result.inputTokens ? ` · ${result.inputTokens} tokens de entrada / ${result.outputTokens ?? 0} de salida` : "";
-    console.log(pc.dim(`Tiempo: ${((Date.now() - started) / 1000).toFixed(1)} s${tokens}\n`));
-  });
-
-program
-  .command("ia")
-  .description("Muestra qué IA está activa y si cada opción (replay, gemini, ollama) está lista")
-  .action(async () => {
-    const statuses = await providersStatus();
-    console.log(pc.bold("\nIA para las revisiones\n"));
-    for (const s of statuses) {
-      const icon = s.ready ? pc.green("✔") : pc.yellow("–");
-      const active = s.active ? pc.cyan(" ← activa por defecto") : "";
-      console.log(`  ${icon} ${pc.bold(s.name.padEnd(7))}${active}\n      ${pc.dim(s.detail)}`);
-    }
-    console.log(pc.dim("\nCambiala para un comando:   guardian review --use gemini   |   --use ollama   |   --use replay"));
-    console.log(pc.dim("Cambiala por defecto:       LLM_PROVIDER=... en el archivo .env de Guardian\n"));
+  .command("dismiss")
+  .description("Marca un hallazgo de la última revisión como falso positivo y lo guarda en la memoria del equipo")
+  .argument("<id>", "ID del hallazgo (ej: G-3f2a1c)")
+  .argument("<motivo>", "por qué no aplica (lo va a leer el resto del equipo)")
+  .action((id: string, reason: string) => {
+    const root = getRepoRoot(process.cwd());
+    if (!root) throw new GuardianError("Este directorio no está dentro de un repositorio git.");
+    const entry = dismissFinding(root, id, reason);
+    console.log(pc.green(`✔ ${entry.id} descartado: "${entry.reason}"`));
+    console.log(pc.dim(`  Guardado en ${MEMORY_PATH}. Commitealo para que lo aproveche todo el equipo.`));
   });
 
 program
@@ -210,25 +176,83 @@ for (const command of program.commands) {
   if (examples) command.addHelpText("after", examples);
 }
 
-// `guardian`, `guardian --help` y `guardian help` muestran la guía completa para principiantes.
-// `guardian help review` muestra la ayuda de ese comando.
-const args = process.argv.slice(2);
-if (args.length === 0 || (args.length === 1 && ["--help", "-h", "help", "ayuda"].includes(args[0]))) {
-  console.log(mainGuide());
-  process.exit(0);
-}
-// `guardian ayuda otra-ia` (también `help otra-ia`, `--help otra-ia` o `otra-ia`): cómo agregar cualquier IA.
-const OTHER_AI_TOPICS = ["otra-ia", "otras-ia", "otra", "llm", "agregar-ia"];
-if (OTHER_AI_TOPICS.includes(args[0]) || (["--help", "-h", "help", "ayuda"].includes(args[0]) && OTHER_AI_TOPICS.includes(args[1]))) {
-  console.log(otherAIGuide(join(GUARDIAN_HOME, ".env")));
-  process.exit(0);
-}
-if (args[0] === "help" || args[0] === "ayuda") {
-  process.argv.splice(2, 1);
-  process.argv.push("--help");
+/** Saca un "--use X" de una lista de argumentos. */
+function stripUse(args: string[]): string[] {
+  const i = args.indexOf("--use");
+  return i === -1 ? args : [...args.slice(0, i), ...args.slice(i + 2)];
 }
 
-program.parseAsync().catch((error: unknown) => {
+/** Menú principal de `guardian` (sin argumentos). Devuelve los argumentos del comando elegido. */
+async function mainMenu(): Promise<string[]> {
+  const asker = terminalAsker();
+  try {
+    console.log(pc.bold("\n🛡  Guardian · tu revisor de código"));
+    console.log(pc.dim('También podés escribirme en tus palabras, ej: guardian "revisá mis cambios con la IA local"'));
+    const pick = await choose(
+      asker,
+      "¿Qué querés hacer?",
+      [
+        { label: "Revisar mis cambios", hint: "da el veredicto y te ofrece corregir" },
+        { label: "Revisar y corregir automáticamente", hint: "te muestra los cambios antes de subir nada" },
+        { label: "Preguntar sobre el código", hint: "chat: preguntás y repreguntás" },
+        { label: "Elegir o cambiar la IA" },
+        { label: "Ver la ayuda completa" },
+      ],
+      0,
+    );
+    if (pick === 2) {
+      const question = (await asker.question(pc.cyan("Escribí tu pregunta (o Enter para abrir el chat): "))).trim();
+      return question ? ["ask", question] : ["chat"];
+    }
+    return [["review"], ["review", "--corregir"], [], ["ia"], ["--help"]][pick];
+  } finally {
+    asker.close();
+  }
+}
+
+async function main() {
+  let args = process.argv.slice(2);
+
+  // `guardian` solo, con una persona en la terminal: menú principal (lo más simple para empezar).
+  if (args.length === 0 && isInteractive()) {
+    args = await mainMenu();
+    process.argv.splice(2, process.argv.length, ...args);
+  }
+
+  // Lenguaje natural: `guardian "revisá mis cambios con la IA local"` → `guardian review --use ollama`.
+  const known = new Set([...program.commands.map((c) => c.name()), "help", "ayuda", "otra-ia", "otras-ia", "otra", "llm", "agregar-ia"]);
+  if (args.length > 0 && !args[0].startsWith("-") && !known.has(args[0])) {
+    // Lo que viene después del texto (ej: --use local) se mantiene como opción.
+    const firstFlag = args.findIndex((a) => a.startsWith("-"));
+    const words = firstFlag === -1 ? args : args.slice(0, firstFlag);
+    const flags = firstFlag === -1 ? [] : args.slice(firstFlag);
+    const routed = routeNaturalLanguage(words.join(" "));
+    // Si la persona pasó --use, manda sobre la IA que se haya deducido del texto.
+    args = flags.includes("--use") ? [...stripUse(routed), ...flags] : [...routed, ...flags];
+    console.log(pc.dim(`→ guardian ${args.map((a) => (a.includes(" ") ? `"${a}"` : a)).join(" ")}`));
+    process.argv.splice(2, process.argv.length, ...args);
+  }
+
+  // `guardian --help` / `guardian help` / `guardian ayuda`: guía completa para principiantes.
+  if (args.length === 0 || (args.length === 1 && ["--help", "-h", "help", "ayuda"].includes(args[0]))) {
+    console.log(mainGuide());
+    return;
+  }
+  // `guardian ayuda otra-ia`: cómo agregar cualquier IA.
+  const otherAI = ["otra-ia", "otras-ia", "otra", "llm", "agregar-ia"];
+  if (otherAI.includes(args[0]) || (["--help", "-h", "help", "ayuda"].includes(args[0]) && otherAI.includes(args[1]))) {
+    console.log(otherAIGuide(join(GUARDIAN_HOME, ".env")));
+    return;
+  }
+  // `guardian help review` → ayuda de ese comando.
+  if (args[0] === "help" || args[0] === "ayuda") {
+    process.argv.splice(2, 1);
+    process.argv.push("--help");
+  }
+  await program.parseAsync();
+}
+
+main().catch((error: unknown) => {
   if (error instanceof GuardianError) {
     console.error(pc.red(`✖ ${error.message}`));
   } else {

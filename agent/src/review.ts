@@ -24,6 +24,8 @@ export interface ReviewOptions {
   llm?: boolean;
   /** Proveedor a usar; si no se pasa, se crea según LLM_PROVIDER. */
   provider?: LLMProvider | null;
+  /** Por qué no hay proveedor (cuando se pasa provider: null). */
+  providerReason?: string;
   /** Grabar las respuestas del LLM para el modo replay (--record). */
   record?: boolean;
   /** Revisar solo commits, ignorando cambios sin commitear (hook pre-push). */
@@ -56,7 +58,7 @@ export async function runReview(options: ReviewOptions): Promise<ReviewReport> {
   // (falta la key, Ollama no está instalado...), se corta acá con las instrucciones.
   const { provider, reason } =
     options.provider !== undefined
-      ? { provider: options.provider, reason: "proveedor no disponible" }
+      ? { provider: options.provider, reason: options.providerReason ?? "proveedor no disponible" }
       : options.llm === false
         ? { provider: null, reason: "" }
         : await prepareProvider(process.env, { use: options.use, model: options.model, record: options.record });
