@@ -1,250 +1,205 @@
 # Decisiones de diseño — Storefront Guardian
 
-<!--
-  Esqueleto para completar. Los comentarios HTML como este son notas de las
-  decisiones técnicas tomadas durante la implementación, para desarrollar
-  con tus palabras. Se pueden borrar al terminar.
--->
+**Autor:** Fabrizio Cuassolo · **Reto:** Full Stack Engineer · IA Agéntica · **Repositorio:** github.com/fabriziocuassolo/Agente-Reviewer
+
+Guardian es un revisor de código para equipos que mantienen tiendas online. Se usa desde la terminal del IDE: revisa los cambios, explica cada problema con cómo arreglarlo, **decide** si el cambio puede avanzar (APROBADO / ADVERTENCIA / BLOQUEADO), puede **corregir** los problemas con mi permiso y **responde preguntas** sobre el código.
+
+> Las secciones 1 a 6 responden lo que pide el reto. Al final hay dos anexos: la **bitácora** con cada paso que tomé y qué decidí, y las **mediciones** que respaldan las decisiones.
+
+---
 
 ## 1. Qué parte del ciclo ataqué y por qué
 
-<!--
-  - Revisión de código (núcleo) + decisión de si el cambio avanza (núcleo) + preguntas sobre el código (secundaria).
-  - El momento elegido es ANTES del push (hook pre-push) y en el PR (GitHub Action):
-    se detecta el problema lo más temprano posible sin cambiar el flujo del equipo.
--->
+Ataqué la **revisión de código**, porque es donde se concentran tres de las fricciones del escenario: es lenta, es inconsistente entre revisores y deja pasar bugs que se descubren tarde. En e-commerce esos bugs cuestan plata (un descuento aplicado dos veces, vender sin stock, una XSS en el catálogo).
 
-## 2. Diseño del sistema
+| Capacidad del reto | Estado | Dónde |
+|---|---|---|
+| Revisar cambios y dar feedback útil y accionable | **Núcleo** | `guardian review`: cada hallazgo trae archivo:línea, explicación y sugerencia |
+| Decidir con criterio si un cambio está listo | **Núcleo** | Gate determinístico con reglas configurables que dice qué regla aplicó |
+| Detectar un problema, proponer corrección **y validarla** | Agregada después | Corrección automática: corrige, **vuelve a revisar** para validar y deja elegir subir o deshacer |
+| Responder preguntas sobre el código | Secundaria | `guardian chat` / `guardian ask`, citando archivo:línea |
 
-<!--
-  - CLI `guardian` que corre dentro de cualquier repo git, desde la terminal del IDE.
-  - Pipeline de review: recolector → chequeos determinísticos → contexto → agente LLM → gate determinístico.
--->
+**Por qué ahí y no en otra parte del ciclo:** revisar y decidir se refuerzan entre sí (el feedback le sirve al desarrollador; la decisión, al equipo). Elegí intervenir **lo más temprano posible sin cambiar el flujo del equipo**: en la terminal mientras se programa, antes del push (hook) y en el pull request (GitHub Action).
 
-## 3. Decisiones y alternativas descartadas
+---
 
-<!--
-  Fase 1 — storefront-demo:
-  - Monorepo con npm workspaces (sin pnpm/turbo): cero herramientas extra para el evaluador.
-  - Express 5 en vez de 4: captura errores de handlers async sin wrappers.
-  - Precios en centavos enteros en todo el backend; el frontend solo divide por 100 al mostrar.
-  - Servicios de negocio separados de Express (`services/`), testeables sin servidor.
-  - `Inventory` con métodos async aunque esté en memoria: simula una DB real y hace que
-    "olvidarse un await" sea un bug realista (base del escenario 04-subtle).
-  - zod para validar toda entrada de la API (misma librería que usa el agente para validar al LLM).
-  - El storefront corre con `tsx` (sin paso de build); el CLI sí se compila con `tsc` para `npm link`.
-  - ESLint sin reglas "type-aware": más rápido y simple. Consecuencia: errores como una promesa
-    sin await no los atrapa el linter → justamente es lo que debe encontrar el agente LLM.
-  - Node 22 LTS (el requisito mínimo declarado es Node 20).
-  - `.gitattributes` fuerza LF para que los patches de demo apliquen igual en Windows y Unix.
+## 2. Cómo diseñé el sistema
 
-  Fase 2 — CLI y chequeos determinísticos:
-  - `child_process` (execFileSync con git) en vez de simple-git: una dependencia menos y
-    los comandos git quedan visibles/explicables en el código.
-  - Qué se revisa (git.ts): --base explícito > cambios sin commitear vs HEAD > commits de la
-    rama vs main (caso pre-push). Los archivos nuevos sin trackear se incluyen con un diff sintético.
-  - Detector de secretos por regex solo sobre líneas AGREGADAS del diff (no castiga código viejo).
-    El reporte enmascara el valor (primeros 4 caracteres) para no volver a filtrarlo en logs de CI.
-  - Lint/tipos/tests se autodetectan desde package.json y se pueden sobreescribir o desactivar
-    (null) en .guardian/config.json. Corren EN PARALELO: el costo de tiempo es el del más lento.
-  - Severidades fijas de los chequeos: tipos y tests rotos = crítico (bloquea); lint = alto.
-  - Gate como lista ordenada de reglas {severidad, mínimo, decisión}. Las de BLOQUEADO se
-    evalúan primero (gana la más estricta). La respuesta siempre dice qué regla se aplicó.
-    Alternativa descartada: que el LLM decida → no auditable ni reproducible.
-  - IDs de hallazgo = hash del contenido SIN número de línea, para que `dismiss` sobreviva
-    a que el código se mueva.
-  - Exit codes: 0 aprobado/advertencia, 1 bloqueado, 2 error de la herramienta.
-  - La config se valida con zod y los errores se muestran con la ruta exacta del campo.
+Una herramienta de terminal (`guardian`) que corre dentro de cualquier repositorio git. El comando principal es un **pipeline de 5 pasos**:
 
-  Fase 3 — Adapter de LLM y agente revisor:
-  - Interfaz `LLMProvider` mínima (complete(system, prompt) → texto + tokens). El revisor no
-    sabe qué proveedor usa: Gemini, Ollama y replay son intercambiables.
-  - Gemini vía REST con fetch, sin SDK: una dependencia menos y se ve exactamente qué se envía.
-    La key va en header (x-goog-api-key), nunca en la URL. Modo JSON nativo (responseMimeType).
-  - Reintentos solo ante errores transitorios (429/500/503) con espera creciente; timeout con
-    AbortSignal (LLM_TIMEOUT_MS).
-  - Elección del modelo por medición, no por suposición (ver comentario en llm/provider.ts):
-    3.8-flash era el mejor pero estaba saturado (~60-80 s); 3.5-flash-lite tardaba ~2 s pero
-    explicó mal el bug y bajó la severidad; 3.6-flash (~11 s) es el equilibrio. Configurable.
-  - Si los chequeos determinísticos ya encontraron un crítico, NO se llama al LLM: ya está
-    bloqueado, gastar tokens y 10 s no cambia la decisión. Primero hay que arreglar eso.
-  - Contexto por prioridad con presupuesto en caracteres (config.context.maxChars, ~4 chars/token):
-    convenciones → diff → archivos modificados → imports directos (1 nivel). Lo que no entra
-    se informa como "no enviado". Archivos con números de línea para que el modelo cite bien.
-  - Redacción de secretos sobre TODO el contexto (no solo líneas nuevas) antes de que salga
-    de la máquina. Siempre se excluyen .env*, node_modules, dist, binarios y lockfiles,
-    más lo que diga .guardianignore (paquete `ignore`, misma sintaxis que .gitignore).
-  - El ID del hallazgo lo genera Guardian (hash), no el modelo: estable y sin colisiones.
-  - Validación con zod de la respuesta. Si es inválida, 1 reintento devolviéndole el error al
-    modelo; si vuelve a fallar → degradación: decide solo lo determinístico + aviso visible.
-    La revisión nunca se cae por culpa del LLM.
-  - Hallazgos que citan archivos fuera del cambio se descartan (control de alucinaciones).
-  - El reporte muestra tokens de entrada/salida: hace visible el costo de cada revisión.
-  - El .env se carga desde la carpeta de Guardian, no del proyecto revisado. Las variables de
-    entorno tienen prioridad (así la GitHub Action pasa la key como secret).
+1. **Recolector** — le pregunta a git qué cambió (sin commitear, commits de la rama o lo que se va a pushear).
+2. **Chequeos determinísticos** (sin IA, siempre corren, en paralelo) — detector de secretos, **reglas fijas del equipo**, lint, tipos y tests.
+3. **Constructor de contexto** — junta el diff, los archivos cambiados, sus imports directos, las convenciones del proyecto, las **skills** que aplican y la **memoria** del equipo. **Tapa los secretos** antes de enviar nada.
+4. **Agente revisor (IA)** — devuelve hallazgos en JSON que se **validan con zod**; si la respuesta es inválida reintenta una vez y, si falla, sigue sin IA y avisa.
+5. **Gate de decisión** (determinístico) — cuenta hallazgos por severidad y aplica reglas: 1 crítico → BLOQUEADO; 3 altos → BLOQUEADO; 1 alto o medio → ADVERTENCIA.
 
-  Fase 4 — Escenarios, replay y --record:
-  - Hallazgo clave al armar los escenarios: los tests de la tienda atrapaban los bugs "obvios"
-    (flotantes en calculateTotals, await faltante en checkout()) → el LLM nunca se llamaba.
-    Los escenarios 02 y 04 meten el bug en código SIN tests (rama mayorista ≥10 unidades,
-    ruta nueva de compra rápida): es justamente el caso realista donde la IA aporta valor.
-  - Escenario 03: el secreto lo bloquea el chequeo determinístico y, por la regla "crítico
-    determinístico → no se llama al LLM", la XSS no se reporta en esa pasada (aparecería al
-    sacar la key). Trade-off: menos costo vs. feedback en dos rondas. [decidir/defender]
-  - Replay: cada grabación guarda TODAS las respuestas de una revisión en orden (incluye
-    reintentos), indexada por nombre de escenario (o hash del prompt). Guarda el hash del
-    prompt y avisa si el código cambió desde que se grabó. Graba respuestas del modelo, no código.
-  - --record envuelve a cualquier proveedor real (patrón decorator): no toca Gemini ni Ollama.
-  - El demo copia la tienda a .demo-work/<escenario> DENTRO del repo (ignorado por git):
-    Node encuentra el node_modules de la raíz, así ESLint/tsc/vitest corren sin reinstalar.
-  - Cuota real de la capa gratuita: 20 requests/día por modelo (gemini-3.6-flash). Por eso:
-    el 429 no se reintenta (solo 500/503), y replay existe para no depender de la cuota.
-    01-clean quedó grabado con gemini-3.5-flash-lite porque se agotó la cuota de 3.6-flash.
-  - Si la IA se intentó y falló (caída, cuota, JSON inválido 2 veces), un APROBADO baja a
-    ADVERTENCIA (regla "ia-no-disponible"): no frena al equipo por una caída de Google,
-    pero tampoco da luz verde sin revisión. Con --no-llm explícito se mantiene APROBADO.
-  - Ollama: num_ctx 16384 explícito (por defecto Ollama recorta el prompt en silencio a 2-4k
-    tokens) y timeout mayor (180 s) porque un 7B en CPU es lento. No probado en esta máquina.
-  - Se mantuvo la regla de la consigna en 03 (decisión del autor): crítico determinístico → sin LLM.
+**La idea central: la IA opina, las reglas deciden.** Así cada decisión es repetible, auditable y configurable por el equipo.
 
-  Fase 5 — Skills, memoria y dismiss:
-  - Skills = markdown en .guardian/skills/ con criterios de revisión (checklists + severidad
-    sugerida). Se cargan SOLO las que matchean los archivos cambiados, según un mapeo
-    skill → patrones en config.json (misma sintaxis que .gitignore, librería `ignore`).
-    Por qué selectivo: cada skill suma tokens (costo/latencia) y ruido. Sin mapeo → todas.
-  - Diferencia CONVENTIONS vs skills: convenciones = reglas de la empresa (qué);
-    skills = cómo revisar un área y qué severidad asignar (criterio del revisor).
-  - Evidencia: con skills, gemini-3.5-flash-lite (el modelo barato) encontró el await
-    faltante del escenario 04 como crítico en 1,5 s; sin skills había subestimado severidades.
-  - Memoria en .guardian/memory.json DENTRO del repo revisado y commiteada: el conocimiento es
-    del equipo, queda versionado y se revisa en PRs como cualquier código.
-  - Doble efecto: (1) filtro exacto por ID (determinístico, auditable) y (2) "excepciones
-    conocidas" en el prompt, para que el modelo no repita el criterio redactado distinto.
-    Solo se pasan las excepciones de los archivos del cambio (máx. 20): el prompt no crece sin límite.
-  - dismiss exige motivo (lo lee el resto del equipo) y NO permite descartar lint/tipos/tests:
-    son hechos, no opiniones; se arreglan o se ajusta el comando en config.
-  - Los hallazgos descartados no cuentan para el gate, ni para decidir si se llama al LLM.
-  - `dismiss` usa .guardian/last-review.json (último reporte, no se commitea) para saber a qué
-    hallazgo corresponde el ID.
-  - Limitación: los IDs de hallazgos de la IA dependen del texto de la explicación, que puede
-    variar entre corridas; por eso el refuerzo vía prompt es importante.
+Alrededor del pipeline:
+- **Proveedores de IA intercambiables** detrás de una interfaz común: replay (respuestas grabadas), Ollama (local), Gemini, Claude y cualquier servicio compatible con OpenAI que se agregue en el `.env`.
+- **Aprendizaje sin reentrenar**: reglas en palabras (`guardian aprender`), reglas fijas (`--patron`), descartes de falsos positivos (`dismiss`), convenciones y skills. Todo vive en el repo y se le pasa a cualquier modelo.
+- **Corrección automática** con foto previa de cada archivo, validación y rollback exacto.
+- **Uso simple**: `guardian` abre un menú; también entiende frases (`guardian "revisá mis cambios con la IA local"`).
+- **Integraciones**: hook `pre-push` y GitHub Action que comenta en cada PR.
+- **Tienda de ejemplo** (`storefront-demo`) con 4 escenarios de bugs sembrados para demostrarlo.
 
-  Correcciones previas a la entrega:
-  - Hook pre-push: revisa SOLO los commits que se pushean (`review --pre-push`), no el árbol
-    de trabajo. Rutas absolutas a node y al CLI (el PATH de los hooks en Windows es distinto).
-    Fail-open: si Guardian no está, avisa y deja pushear. Probado con un push real a un remoto local.
-    Limitación: lint/tipos/tests corren sobre el árbol de trabajo, no sobre el commit exacto.
-  - GitHub Action: el reporte se lee desde un archivo (antes se pegaba dentro del script →
-    se rompía con backticks y permitía inyección). Actualiza su comentario en vez de duplicarlo.
-  - ask: texto libre (antes el proveedor forzaba JSON), busca desde la carpeta actual, respeta
-    .guardianignore y redacta secretos igual que review. De 18k a 12k tokens y de 48 s a 13 s.
-  - Anécdota útil: al regrabar, la IA (con skills) encontró un bug latente en el escenario
-    "limpio" 01 (filtro en minúsculas vs. categorías con su casing original). Se corrigió el
-    escenario. Muestra que el revisor aporta incluso en cambios que parecían correctos.
+---
 
-  Despliegue de la tienda en Vercel:
-  - El primer intento falló: Vercel construía desde la raíz y el "prepare" compilaba el agente, con otra
-    versión de npm que resolvía distinto las dependencias anidadas (ignore 7 del agente vs ignore 5 de ESLint).
-    La tienda no necesita el agente: scripts/build-agent.mjs lo saltea si existe la variable VERCEL.
-  - Vercel detecta Express en src/app.ts y exige export por defecto → app.ts exporta la app; server.ts solo
-    hace listen para uso local. express.static se ignora en Vercel: public/ se sirve desde su CDN.
-  - products.json se importa (import ... with { type: "json" }) en vez de leerse con fs, para que viaje
-    dentro del paquete de la función.
-  - Limitación conocida: carrito y stock viven en memoria; en serverless cada instancia tiene su estado.
-    Para una tienda real habría que persistirlos (Vercel KV / Upstash Redis o una base de datos).
+## 3. Decisiones que tomé y alternativas que descarté
 
-  Simplificación del uso y corrección automática (pedidos del autor):
-  - Pedido: "tiene muchos comandos". Propuesta adoptada, en 3 niveles de menor a mayor esfuerzo:
-    1) `guardian` solo → menú principal (revisar, revisar y corregir, preguntar, elegir IA, ayuda).
-    2) Lenguaje natural: `guardian "revisá mis cambios con la IA local"` → review --use ollama.
-       Enrutador por palabras clave, SIN IA: instantáneo, gratis, predecible y testeable; si no reconoce
-       una intención, lo trata como pregunta sobre el código. Muestra el comando equivalente ("→ guardian
-       review --use ollama") para que la persona aprenda los comandos sin memorizarlos.
-       Alternativa descartada: interpretar con la IA → lento, cuesta tokens, y con replay no funcionaría.
-    3) Comandos explícitos para quien los prefiera (y para scripts/CI).
-  - Menú de IA (pedido del autor): 1) replay 2) IA local → modelo más chico o más grande (según los
-    modelos instalados en Ollama, por tamaño) 3) proveedor → Gemini, Claude, Grok, GPT u Otra.
-    Si la elegida no está configurada, explica cómo (y ofrece pegar la clave ahí mismo y la escribe en
-    el .env); si está configurada, la usa y empieza.
-  - La elección se GUARDA (pedido del autor) en ~/.guardian-preferencias.json (carpeta del usuario, no el
-    repo: es una preferencia personal). Orden: --use > elección guardada > .env > replay. `guardian ia`
-    la cambia. La primera vez que se corre sin elección, aparece el menú.
-  - Siempre se avisa con qué IA se trabaja: "🤖 Usando: IA local · Ollama · modelo (privada...)".
-  - El menú solo aparece si hay una persona en la terminal (TTY). En el hook, CI, --json o con entrada
-    redirigida no se pregunta nada. La demo fuerza replay salvo --use, para ser reproducible.
-  - Corrección automática (pedido del autor): tras la revisión, ofrece corregir. Flujo:
-    snapshot de cada archivo → la IA reescribe solo lo necesario → se VALIDA volviendo a revisar
-    (hallazgos antes/después y si pasan los tests) → diff visible → la persona elige:
-    commit + push | deshacer (rollback exacto a la foto) | dejar sin commitear. Por defecto: deshacer.
-    Esto cubre la capacidad 2 del reto (detectar, corregir y VALIDAR la corrección).
-  - Rollback con snapshot propio en memoria (no git stash): restaura byte a byte y no toca los cambios
-    del desarrollador. Verificado con hash del archivo antes/después.
-  - Hallazgo al probar: el 14B "corrigió" una contraseña del frontend con process.env (que en el navegador
-    no existe) y la validación dio BLOQUEADO igual. Medidas: (a) se le avisa a la IA cuando el archivo
-    corre en el navegador; (b) si tras corregir sigue BLOQUEADO, el push se marca "NO recomendado" y pide
-    una segunda confirmación (por defecto no → rollback). Nunca se sube nada sin elección explícita.
-  - Commit + push agrega solo los archivos revisados y los corregidos (nunca `git add -A`), con un mensaje
-    que lista cada corrección; el push no vuelve a disparar el hook (GUARDIAN_SKIP_HOOK).
-  - No se ofrece corrección automática dentro del hook pre-push (no hay terminal interactiva): sugiere
-    correr `guardian review`.
-  - Limitación medida: con modelos locales la validación es ruidosa (el 14B volvió a reportar "falta await"
-    sobre la línea ya corregida). La señal dura es: tests y chequeos determinísticos.
+### Arquitectura y stack
+| Decisión | Por qué | Alternativa descartada |
+|---|---|---|
+| Herramienta de terminal (CLI) en Node + TypeScript | Revisar exige leer el repo local, correr sus tests y poder frenar un push: eso pasa en la máquina del desarrollador. El mismo programa sirve para la terminal, el hook y la CI. Mismo lenguaje que la tienda. | **n8n**: necesita servidor, no puede frenar un push local y el código viajaría a otro lado; lo usaría después de la decisión (avisar por Slack). **Google ADK / LangGraph**: el pipeline tiene pasos fijos; un framework sumaba complejidad sin aportar. **Power Apps**: no accede al repo ni a git. |
+| El gate es determinístico | Repetible, auditable, configurable | Que la IA decida: la misma pregunta puede dar otra respuesta |
+| Pocas dependencias (commander, zod, picocolors, ignore, vitest) y Gemini por REST sin SDK | Fácil de instalar y de explicar; se ve exactamente qué se envía | SDKs por proveedor (para Claude sí uso el SDK oficial: tiene su propia API) |
+| Monorepo con npm workspaces | Cero herramientas extra para quien lo prueba | pnpm / turbo |
+| Precios en centavos enteros, servicios separados de Express, validación con zod | Evita errores de punto flotante; lógica testeable sin servidor | Montos con decimales |
 
-  Aprendizaje, monorepo, "todos los errores" y chat (a partir de pruebas del autor):
-  - Diagnóstico: el "JSON con información sensible" que marcó el modelo 7B era un FALSO positivo sobre
-    .guardian/memory.json (la memoria de Guardian). Arreglo: nunca mandar .guardian/ ni nombres de
-    binarios (PDF) a la IA. No se "enseñó" ese hallazgo: hubiera empeorado la revisión.
-  - Monorepo: Guardian tomaba config/convenciones/skills de la RAÍZ del repo, así que revisando la tienda
-    desde la raíz no cargaba sus reglas (XSS salía ALTO en vez de CRÍTICO). Ahora detecta el proyecto
-    (carpeta con .guardian/ o docs/CONVENTIONS.md) por la carpeta actual o por los archivos cambiados.
-  - "Quiero todos los errores": se invierte la decisión anterior. La IA revisa SIEMPRE (el secreto va
-    redactado) y el prompt pide recorrer cada archivo y reportar todo (máx. 25). El ahorro queda opcional:
-    ia.saltearSiHayCriticos. Medido: con 3 bugs en index.html, 7B y 14B encontraron los 3 (antes, 1).
-  - Aprendizaje sin fine-tuning, en 3 niveles: reglas en palabras (guardian aprender → prompt),
-    descartes (dismiss), reglas FIJAS (--patron → regex determinística en config.json).
-    Medido: la misma regla ("sin <script> inline") en palabras NO la aplicó ni 7B ni 14B; como regla
-    fija la detectaron ambos. Conclusión: lo innegociable va determinístico; la IA, para criterio.
-  - Chat (guardian chat / ask sin pregunta): historial de 4 turnos; las repreguntas suman los nombres
-    de funciones de la respuesta anterior; y una BÚSQUEDA EXACTA (sin IA) de dónde aparece cada nombre
-    se le pasa al modelo para que cite líneas reales. Medido: sin esto el 14B inventaba ubicaciones.
+### Revisión
+| Decisión | Por qué |
+|---|---|
+| Secretos detectados solo en líneas **agregadas**, con el valor enmascarado en el reporte | No castiga código viejo y no vuelve a filtrar la clave en logs |
+| Lint, tipos y tests se autodetectan y corren **en paralelo** | El tiempo total es el del más lento |
+| ID del hallazgo = hash del contenido **sin** número de línea | `dismiss` sigue funcionando aunque el código se mueva |
+| Contexto con presupuesto (~80.000 caracteres) y archivos con número de línea | Controla costo y latencia; el modelo cita líneas exactas |
+| Hallazgos que citan archivos fuera del cambio se descartan; los repetidos se muestran una vez | Control de alucinaciones (necesario con modelos chicos) |
+| Si la IA falla, un APROBADO baja a ADVERTENCIA (`ia-no-disponible`) | No frena al equipo por una caída del proveedor, pero no aprueba a ciegas |
+| **La IA revisa siempre**, aunque ya haya un crítico (antes no lo hacía) | Ver **todos** los errores juntos. El ahorro quedó opcional: `ia.saltearSiHayCriticos` |
+| En un repo con varios proyectos, se usa la configuración del proyecto revisado | Desde la raíz no se cargaban las convenciones de la tienda (la XSS salía ALTO en vez de CRÍTICO) |
+| Nunca se envían a la IA los archivos internos de Guardian ni nombres de binarios | El modelo chico marcaba un "falso secreto" en su propia memoria |
 
-  Elegir y agregar IAs:
-  - `--use replay|gemini|ollama` (alias ia/local) y `--model` por comando; prioridad: --use > .env > replay.
-    Si la IA pedida no está lista, se corta ANTES de revisar con instrucciones (key, instalación, modelo).
-  - IAs propias sin tocar código: `IA_<NOMBRE>_URL/KEY/MODEL[/FORMATO]` en el .env; `--use <nombre>`
-    y `guardian ia` las descubren solas. Formato "openai" (/chat/completions, el estándar de facto:
-    OpenAI, DeepSeek, Groq, Mistral, OpenRouter, LM Studio) por fetch; formato "anthropic" con el SDK
-    oficial (Claude tiene su propia API). Decisión: un adaptador genérico cubre a casi todos los
-    proveedores, en vez de uno por marca. Modo JSON (response_format) con reintento sin él si no se soporta.
-  - Aclaración clave para usuarios: ChatGPT Plus / Claude Pro no dan acceso a la API.
-  - Hallazgo: el endpoint OpenAI-compatible de Ollama usa contexto de 2k tokens y recorta el prompt;
-    por eso para Ollama se recomienda el proveedor nativo (--use local, que fija num_ctx).
-  - guardian --help / ayuda / ayuda otra-ia: guía para principiantes en castellano.
+### IA y proveedores
+| Decisión | Por qué |
+|---|---|
+| Modelo de Gemini elegido **midiendo**: `gemini-3.6-flash` | 3.8-flash era el mejor pero estaba saturado (60–80 s); 3.5-flash-lite (~2 s) explicó mal un bug |
+| Modo replay con grabaciones reales | Cualquiera prueba la demo en minutos, sin clave ni internet |
+| IA local con Ollama; contexto de 16k tokens explícito | Privacidad total; Ollama recorta el prompt en silencio si no se configura |
+| Cualquier IA se agrega con 3 líneas en el `.env` (`IA_<NOMBRE>_URL/KEY/MODEL`) | Un adaptador "compatible con OpenAI" cubre a casi todos (ChatGPT, DeepSeek, Groq, Mistral…); Claude va con su SDK |
+| La elección de IA se guarda por usuario; siempre se muestra "🤖 Usando: …" | No repetir la elección y saber siempre a quién se envía el código |
+| No se reintenta ante cuota agotada (429) | Cada reintento gasta cuota sin chance de éxito |
 
-  Prueba con Ollama (RTX 5080 16 GB, 100% GPU, num_ctx 16384 confirmado con `ollama ps`):
-  - Escenarios: Gemini 3.6 Flash 4/4; qwen2.5-coder:14b 3/4 (encuentra los decimales del 02 pero no
-    el cupón doble; falsos positivos en 01); qwen2.5-coder:7b 2/4 (solo el await del 04, con línea mal).
-  - Tiempos de IA locales: 2-16 s. Privacidad total, menos precisión: es el trade-off central.
-  - Default se mantiene en 7b (corre en casi cualquier PC); se recomienda 14b con ≥12 GB de VRAM.
-  - Ajustes que salieron de probar modelos chicos: deduplicar hallazgos repetidos, aceptar `{}` como
-    "sin hallazgos" y repetir la pregunta al final del prompt de `ask` (la perdían en textos largos).
--->
+### Aprendizaje (sin reentrenar la IA)
+| Nivel | Qué es | Medido |
+|---|---|---|
+| Reglas en palabras (`guardian aprender "…"`) | Criterio que se le pasa a la IA | Los modelos locales **no siempre** las aplican |
+| Reglas fijas (`--patron`) | Un patrón que se detecta siempre, sin IA | La misma regla la detectaron **todos** los modelos |
+| Descartes (`dismiss`) | Falsos positivos que no se repiten | Filtro exacto + aviso a la IA |
+| Convenciones y skills | Reglas de la empresa y criterios por área | Con skills, el modelo barato encontró un bug que antes subestimaba |
+
+**Conclusión:** lo innegociable va como regla fija; la IA queda para el criterio.
+
+### Corrección automática
+| Decisión | Por qué |
+|---|---|
+| Solo con permiso; foto de cada archivo antes de tocarlo | Rollback exacto (verificado con el hash del archivo) sin tocar los cambios del desarrollador |
+| Validación: se **vuelve a revisar** después de corregir | Muestra problemas antes → después y si pasan los tests |
+| Opciones: commit + push / deshacer / dejar sin commitear; **por defecto, deshacer** | Nunca se sube nada sin elección explícita |
+| Si sigue BLOQUEADO: push "NO recomendado" + segunda confirmación | En una prueba, la IA "arregló" una contraseña del navegador con `process.env` y la validación lo detectó |
+| Commit solo de los archivos revisados y corregidos | Nunca `git add -A` a ciegas |
+
+### Uso
+| Decisión | Por qué |
+|---|---|
+| `guardian` solo abre un menú; también entiende frases | Pedido: "tiene muchos comandos" |
+| Las frases se interpretan **sin IA** (palabras clave) y se muestra el comando equivalente | Instantáneo, gratis, predecible y testeable; enseña los comandos sin memorizarlos |
+| Ayuda `guardian --help` para alguien que no programa | Operabilidad |
+
+### Demo, integraciones y despliegue
+| Decisión | Por qué |
+|---|---|
+| Bugs de los escenarios 02 y 04 en código **sin tests** | Los tests atrapaban los bugs "obvios" y la IA nunca se llamaba: el valor real está en lo que se escapa de los tests |
+| La demo trabaja en copias dentro de `.demo-work/` (ignorada por git) | No ensucia el repo y reutiliza las dependencias |
+| Hook: revisa solo los commits que se suben; si Guardian falta, avisa y deja pasar | Revisar lo que realmente se pushea; una herramienta de apoyo no debe trabar al equipo |
+| GitHub Action lee el reporte desde un archivo y actualiza un único comentario | La primera versión pegaba el reporte en el script (se rompía y permitía inyección) |
+| Vercel: no compila el agente; `src/app.ts` exporta la app; el catálogo se importa en el código | El build fallaba compilando el agente; Vercel exige ese formato |
+
+---
 
 ## 4. Cómo balanceé costo, tiempo, privacidad y operabilidad
 
-<!--
-  - Costo:
-  - Tiempo de respuesta:
-  - Privacidad:
-  - Operabilidad:
--->
+| Condición | Qué hice | Dato concreto |
+|---|---|---|
+| **Costo** | Capa gratuita de Gemini, Ollama gratis y replay. Skills solo si aplican. Contexto con tope. Opción de no llamar a la IA si ya está bloqueado. | $0. Una revisión usa entre 5.000 y 12.000 tokens de entrada |
+| **Tiempo** | Chequeos en paralelo; modelo elegido midiendo; IA local en GPU | Chequeos ~1,5 s · IA en la nube 10–60 s · IA local 2–16 s · replay ~2 s |
+| **Privacidad** | Secretos tapados antes de enviar; nunca `.env`, dependencias ni binarios; `.guardianignore`; IA local para código sensible; siempre se avisa a quién se envía | La capa gratuita de Gemini puede usar los datos; para código real: Ollama o un plan pago |
+| **Operabilidad** | `npm install` + `npm link`; replay sin clave; menú y lenguaje natural; ayuda para principiantes; README, tutorial y casos de prueba | Demo completa en ~3 minutos |
+
+**Cuando chocaron:**
+- **Costo vs. feedback completo:** primero no llamaba a la IA si ya había un crítico. Probándolo con cambios reales vi que el desarrollador recibía un error por vez, así que **prioricé ver todo junto** y dejé el ahorro configurable.
+- **Velocidad vs. calidad:** elegí el modelo intermedio, no el más rápido ni el mejor.
+- **Privacidad vs. precisión:** la IA local de 14B encontró 3 de 4 escenarios y Gemini 4 de 4. El sistema permite ambos, y lo innegociable se cubre con reglas fijas que no dependen del modelo.
+- **Automatizar vs. control:** la corrección automática existe, pero siempre con validación, diff visible y decisión explícita.
+
+---
 
 ## 5. Qué haría con más tiempo
 
-<!--
--->
+- **Un revisor más "agente":** darle herramientas (leer otro archivo, buscar usos, correr un test, escribir un test que demuestre el bug) en un loop acotado, y activarlo solo en cambios riesgosos.
+- **Medir con un set de evaluación** (`npm run eval`): bugs encontrados, falsos positivos, tokens y tiempo por modelo.
+- **Validar las correcciones con tests generados**, no solo volviendo a revisar.
+- **Persistir el estado de la tienda** (carrito y stock) para que funcione en serverless.
+- Probar la GitHub Action en un PR real y exponer Guardian como **servidor MCP** para los agentes del editor.
+- Búsqueda semántica para el chat.
+
+---
 
 ## 6. Qué hice con apoyo de IA y qué es mío
 
-<!--
--->
+**Mío (idea, diseño y decisiones):**
+- La especificación con la que arrancó todo: qué capacidades atacar, el pipeline de 5 pasos, el gate determinístico, las skills, la memoria con `dismiss`, los proveedores (con replay y `--record`), los escenarios de demo, la GitHub Action y el contenido del README.
+- La forma de trabajar: plan por fases, aprobar cada fase, un commit por fase, código simple y comentado.
+- Las decisiones que tomé probando el sistema, detalladas en la bitácora (Anexo A).
+
+**Con apoyo de IA (Claude, como asistente de programación):**
+- La implementación del código y de los tests, siguiendo mi especificación y mis pedidos, fase por fase.
+- Decisiones técnicas de implementación dentro de mi diseño (por ejemplo, cómo detectar secretos, cómo armar el contexto o el formato de las grabaciones).
+- Las mediciones de modelos y varias propuestas que acepté después de verlas funcionar.
+- La documentación y la guía de estudio.
+
+**Errores de la IA que detectamos y corregimos:** ejemplos de configuración inválidos en el README, una GitHub Action insegura, `ask` que devolvía JSON crudo, un hook sin probar, regex rotas por caracteres invisibles y textos con escapes mal hechos.
+
+---
+
+## Anexo A — Bitácora: los pasos que tomé y qué decidí
+
+| # | Paso | Qué decidí |
+|---|---|---|
+| 1 | Escribí la especificación del proyecto | Atacar revisión de código + decisión (núcleo) y preguntas (secundaria). Preferí algo enfocado y bien hecho |
+| 2 | Revisé el plan por fases | Lo aprobé; instalar Node 22, rama `main`, Gemini como primer proveedor |
+| 3 | Fases 1 a 5 (tienda, CLI, IA, demo, skills y memoria) | Aprobé cada fase después de ver cómo probarla |
+| 4 | Me encontré con que en el escenario 03 la XSS no aparecía | En ese momento, **mantuve** la regla de la consigna (sin IA si ya hay un crítico) |
+| 5 | Antes de entregar, pedí revisar errores | Corregir README, Action, `ask`, hook y grabaciones antes de seguir |
+| 6 | Saqué la clave real de ejemplo del tutorial | No mostrar claves con forma real en la documentación |
+| 7 | Pedí una guía de estudio en PDF | Entender cada parte para defenderla en la entrevista |
+| 8 | Instalé Ollama y probé la IA local | Comparar privacidad vs. precisión con datos propios |
+| 9 | Pedí elegir la IA desde la terminal | `--use`, replay por defecto, instrucciones si falta configuración |
+| 10 | Pedí poder agregar cualquier IA (ChatGPT, Claude…) | Que se agregue desde el `.env` y aparezca sola en `--use` |
+| 11 | Probé con mis propios cambios y vi un falso positivo del modelo chico y un error no detectado en `index.html` | No "enseñarle" el falso positivo; arreglar la causa. **Cambiar la decisión del paso 4:** quiero ver **todos** los errores |
+| 12 | Pedí que aprenda y que `ask` funcione como chat | Aprendizaje sin reentrenar (reglas, descartes, reglas fijas) y chat con repreguntas |
+| 13 | Pedí corrección automática con confirmación y rollback | Nunca subir sin preguntar; si digo que no, todo vuelve a como estaba |
+| 14 | Sentí que había muchos comandos | Menú interactivo, elección de IA guardada, aviso "Usando: …" y lenguaje natural |
+| 15 | Probé la corrección automática en el repo real | Se subió un commit de correcciones que no cambió código (solo memoria y PDF) |
+| 16 | Quise publicar la tienda en Vercel; el build falló | Desplegar solo la tienda (Root Directory `storefront-demo`) y adaptarla al formato de Vercel |
+| 17 | Vi que este documento no mostraba las decisiones | Reescribirlo visible y completo |
+
+---
+
+## Anexo B — Mediciones que respaldan las decisiones
+
+**Escenarios de demo por modelo**
+
+| Escenario | Gemini 3.6 Flash | Ollama 14B | Ollama 7B |
+|---|---|---|---|
+| 01 cambio correcto | APROBADO ✔ | falsos positivos | falsos positivos |
+| 02 decimales + cupón doble | encuentra los dos ✔ | encuentra los decimales | no encuentra ninguno |
+| 03 XSS + clave | BLOQUEADO ✔ (sin depender de la IA) | ✔ | ✔ |
+| 04 `await` faltante | línea exacta ✔ | línea exacta ✔ | línea equivocada |
+
+**Otras mediciones**
+- Con 3 errores en `index.html`, el 7B y el 14B encontraron los 3 después de los cambios del paso 11 (antes, 1).
+- Una regla en palabras no la aplicó ningún modelo local; la misma como regla fija la detectaron todos.
+- Chat: sin la búsqueda exacta de nombres, el 14B inventaba ubicaciones; con ella cita líneas reales.
+- `ask` desde la carpeta de la tienda: de 48 s y 18.000 tokens a 13 s y 12.000 tokens.
+- Corrección automática: rollback con hash idéntico; push a un remoto de prueba ✔.
+- Cuota gratuita de Gemini: ~20 revisiones por día por modelo.
