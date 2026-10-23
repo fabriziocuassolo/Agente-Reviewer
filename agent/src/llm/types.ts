@@ -1,6 +1,8 @@
 export interface LLMRequest {
   system: string;
   prompt: string;
+  /** Pedir la respuesta en JSON (por defecto sí; `ask` lo desactiva para recibir texto). */
+  json?: boolean;
 }
 
 export interface LLMResponse {

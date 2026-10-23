@@ -24,6 +24,8 @@ export interface ReviewOptions {
   provider?: LLMProvider | null;
   /** Grabar las respuestas del LLM para el modo replay (--record). */
   record?: boolean;
+  /** Revisar solo commits, ignorando cambios sin commitear (hook pre-push). */
+  committedOnly?: boolean;
 }
 
 /**
@@ -44,7 +46,9 @@ export async function runReview(options: ReviewOptions): Promise<ReviewReport> {
   const warnings: string[] = [];
 
   // 1. Recolector
-  const changes = await timer.measure("Recolección", () => collectChanges(root, config.baseBranch, options.base));
+  const changes = await timer.measure("Recolección", () =>
+    collectChanges(root, config.baseBranch, options.base, options.committedOnly),
+  );
   if (changes.files.length === 0) {
     return {
       decision: "APROBADO",

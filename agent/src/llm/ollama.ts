@@ -33,7 +33,8 @@ export class OllamaProvider implements LLMProvider {
             { role: "user", content: request.prompt },
           ],
           stream: false,
-          format: "json", // fuerza salida JSON
+          // Fuerza salida JSON para las revisiones; `ask` pide texto libre.
+          ...(request.json === false ? {} : { format: "json" }),
           options: {
             temperature: 0.2,
             // Ollama usa por defecto una ventana chica (2-4k tokens) y recorta el prompt en silencio.

@@ -1,13 +1,13 @@
 {
   "key": "01-clean",
   "provider": "gemini",
-  "model": "gemini-3.5-flash-lite",
-  "recordedAt": "2026-10-22T23:08:26.551Z",
-  "promptHash": "eaff236c169b7e9e",
+  "model": "gemini-3.6-flash",
+  "recordedAt": "2026-10-23T16:02:13.355Z",
+  "promptHash": "84c8554ecd66f09c",
   "responses": [
     {
       "text": "{\"findings\":[]}",
-      "inputTokens": 10694,
+      "inputTokens": 11800,
       "outputTokens": 4
     }
   ]

@@ -33,7 +33,8 @@ export class GeminiProvider implements LLMProvider {
       contents: [{ role: "user", parts: [{ text: request.prompt }] }],
       generationConfig: {
         temperature: 0.2, // revisiones consistentes entre ejecuciones
-        responseMimeType: "application/json", // modo JSON nativo de Gemini
+        // Modo JSON nativo de Gemini para las revisiones; texto libre para `ask`.
+        responseMimeType: request.json === false ? "text/plain" : "application/json",
       },
     });
 

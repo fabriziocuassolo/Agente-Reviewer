@@ -22,8 +22,8 @@ Si no tenés Node.js 20+, instalalo desde https://nodejs.org (elegí la versión
 ### 1.1. Cloná el repositorio
 
 ```bash
-git clone https://github.com/tu-usuario/storefront-guardian.git
-cd storefront-guardian
+git clone https://github.com/fabriziocuassolo/Agente-Reviewer.git
+cd Agente-Reviewer
 ```
 
 ### 1.2. Instalá las dependencias
@@ -124,8 +124,10 @@ git commit -m "initial"
 Editá cualquier archivo o creá uno nuevo. Por ejemplo:
 
 ```bash
-echo "const API_KEY = 'sk_live_abc123xyz';" >> index.js
+echo 'const API_KEY = "prod_9f8a7b6c5d4e3f2a1b0c";' >> index.js
 ```
+
+(Es una key inventada, pero con la forma de una real.)
 
 ### 3.3. Ejecutá `guardian review`
 
@@ -133,7 +135,7 @@ echo "const API_KEY = 'sk_live_abc123xyz';" >> index.js
 guardian review
 ```
 
-Deberías ver algo como:
+Vas a ver esto (salida real):
 
 ```
 🛡  Guardian · revisión de cambios
@@ -141,48 +143,45 @@ Comparando: cambios sin commitear contra HEAD (1 archivo/s)
 
 Chequeos determinísticos
   ✖ Secretos                1 ms
-  – ESLint                  omitido: no se encontró configuración en el proyecto
-  – Tipos (TypeScript)      omitido: no se encontró configuración en el proyecto
-  – Tests                   omitido: no se encontró configuración en el proyecto
+  – ESLint               omitido: no se encontró configuración en el proyecto
+  – Tipos (TypeScript)   omitido: no se encontró configuración en el proyecto
+  – Tests                omitido: no se encontró configuración en el proyecto
 
 Hallazgos (1)
-   CRÍTICO  index.js:2 [secretos] G-abc123
-    Clave secreta de Stripe escrita en el código: sk_l… (17 caracteres).
-    Cualquiera con acceso al repo (o a su historial) puede usarla.
-    → Mové el valor a una variable de entorno (process.env) y agregala
-      a .env.example sin el valor real. Si ya se pusheó, considerá la
-      clave comprometida y rotala.
+   CRÍTICO  index.js:2 [secretos] G-57cca0
+    Credencial hardcodeada escrita en el código: prod… (25 caracteres). Cualquiera con acceso al repo (o a su historial) puede usarla.
+    → Mové el valor a una variable de entorno (process.env) y agregala a .env.example sin el valor real. Si ya se pusheó, considerá la clave comprometida y rotala.
 
-⚠ Revisión con IA no disponible: no hay una grabación para este cambio.
-  El modo replay solo funciona con los escenarios de demo; para revisar
-  otros cambios usá ollama o gemini.
+⚠ Se omitió la revisión con IA: los chequeos determinísticos ya encontraron fallos críticos.
 
 Decisión:  BLOQUEADO
   Regla "critico-bloquea": 1 hallazgo crítico (la regla exige 1 o más)
 
-Tiempos: Recolección 50 ms · Chequeos 10 ms · Total 60 ms
+Tiempos: Recolección 138 ms · Chequeos 1 ms · Total 140 ms
 ```
 
 **¿Qué pasó?**
-- El detector de secretos encontró la API key hardcodeada.
-- Como es un **CRÍTICO**, el cambio está **BLOQUEADO**.
-- El modo replay no puede revisar este código (solo funciona con los escenarios de demo), así que solo corrieron los chequeos determinísticos.
+- El detector de secretos (sin IA) encontró la key escrita en el código. El reporte no la repite entera.
+- Es **CRÍTICO**, así que el cambio queda **BLOQUEADO** (exit code 1).
+- Como ya está bloqueado, Guardian ni siquiera llama al modelo: ahorra tiempo y cuota.
+- Lint, tipos y tests aparecen como "omitidos" porque este proyecto de prueba no los tiene. En un proyecto con `package.json` se detectan solos.
 
 ### 3.4. Corregí el problema
 
-Borrá la línea del secreto:
+Volvé `index.js` a como estaba y hacé otro cambio cualquiera:
 
 ```bash
-# Editá index.js y quitá la línea del API_KEY
+git checkout -- index.js
+echo "console.log('chau')" >> index.js
 ```
 
-Ejecutá de nuevo:
+Como en modo replay no hay un modelo para revisar tu código, corré solo los chequeos determinísticos:
 
 ```bash
-guardian review
+guardian review --no-llm
 ```
 
-Ahora debería decir **APROBADO** (o **ADVERTENCIA** si el LLM no pudo revisar y había otros hallazgos no críticos).
+Ahora dice **APROBADO**. Si corrés `guardian review` sin `--no-llm` en modo replay, vas a ver **ADVERTENCIA** con la regla `ia-no-disponible`: Guardian no aprueba un cambio que la IA no pudo revisar. Para la revisión completa seguí con la Parte 4.
 
 ---
 
@@ -197,7 +196,7 @@ El modo **replay** solo sirve para los escenarios de demo. Para revisar tu códi
 
 2. **Agregala a `.env`:**
    ```bash
-   cd ~/ruta/a/storefront-guardian
+   cd ~/ruta/a/Agente-Reviewer
    ```
 
    Editá `.env` y cambiá:
@@ -212,7 +211,7 @@ El modo **replay** solo sirve para los escenarios de demo. Para revisar tu códi
    guardian review
    ```
 
-Ahora la revisión tarda entre 10 y 30 segundos (según el tamaño del cambio) y el modelo revisa tu código de verdad.
+Ahora la revisión tarda entre 10 y 60 segundos (según el tamaño del cambio y la demanda del modelo) y el modelo revisa tu código de verdad.
 
 ### Opción B: Ollama (modelo local, privado)
 
@@ -226,7 +225,7 @@ Ahora la revisión tarda entre 10 y 30 segundos (según el tamaño del cambio) y
 
 3. **Configurá `.env`:**
    ```bash
-   cd ~/ruta/a/storefront-guardian
+   cd ~/ruta/a/Agente-Reviewer
    ```
 
    Editá `.env`:
@@ -260,7 +259,9 @@ Ahora cada vez que hagas:
 git push
 ```
 
-...Guardian ejecuta `review` antes. Si está **BLOQUEADO**, el push se cancela.
+...Guardian revisa **los commits que estás por pushear** (no los cambios sin commitear). Si el resultado es **BLOQUEADO**, el push se cancela y el remoto no se toca.
+
+Si Guardian no está disponible (por ejemplo, moviste la carpeta), el hook avisa y deja pushear: una herramienta de apoyo no debería trabar al equipo. En ese caso reinstalalo con `guardian uninstall-hook` y `guardian install-hook`.
 
 Para saltear el hook una sola vez:
 
@@ -289,9 +290,9 @@ cat > .guardian/config.json <<'EOF'
   "baseBranch": "main",
   "gate": {
     "rules": [
-      { "condition": "critico", "min": 1, "decision": "BLOQUEADO" },
-      { "condition": "alto", "min": 3, "decision": "BLOQUEADO" },
-      { "condition": "alto", "min": 1, "decision": "ADVERTENCIA" }
+      { "name": "critico-bloquea", "severity": "critico", "min": 1, "decision": "BLOQUEADO" },
+      { "name": "muchos-altos-bloquean", "severity": "alto", "min": 3, "decision": "BLOQUEADO" },
+      { "name": "alto-advierte", "severity": "alto", "min": 1, "decision": "ADVERTENCIA" }
     ]
   }
 }

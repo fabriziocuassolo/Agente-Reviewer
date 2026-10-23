@@ -128,6 +128,19 @@
     hallazgo corresponde el ID.
   - Limitación: los IDs de hallazgos de la IA dependen del texto de la explicación, que puede
     variar entre corridas; por eso el refuerzo vía prompt es importante.
+
+  Correcciones previas a la entrega:
+  - Hook pre-push: revisa SOLO los commits que se pushean (`review --pre-push`), no el árbol
+    de trabajo. Rutas absolutas a node y al CLI (el PATH de los hooks en Windows es distinto).
+    Fail-open: si Guardian no está, avisa y deja pushear. Probado con un push real a un remoto local.
+    Limitación: lint/tipos/tests corren sobre el árbol de trabajo, no sobre el commit exacto.
+  - GitHub Action: el reporte se lee desde un archivo (antes se pegaba dentro del script →
+    se rompía con backticks y permitía inyección). Actualiza su comentario en vez de duplicarlo.
+  - ask: texto libre (antes el proveedor forzaba JSON), busca desde la carpeta actual, respeta
+    .guardianignore y redacta secretos igual que review. De 18k a 12k tokens y de 48 s a 13 s.
+  - Anécdota útil: al regrabar, la IA (con skills) encontró un bug latente en el escenario
+    "limpio" 01 (filtro en minúsculas vs. categorías con su casing original). Se corrigió el
+    escenario. Muestra que el revisor aporta incluso en cambios que parecían correctos.
 -->
 
 ## 4. Cómo balanceé costo, tiempo, privacidad y operabilidad

@@ -2,13 +2,13 @@
   "key": "02-pricing-float",
   "provider": "gemini",
   "model": "gemini-3.6-flash",
-  "recordedAt": "2026-10-22T23:04:43.020Z",
-  "promptHash": "4e7be679a3d9c443",
+  "recordedAt": "2026-10-23T15:58:13.986Z",
+  "promptHash": "75314eef8a42020f",
   "responses": [
     {
-      "text": "{\"findings\":[{\"file\":\"src/services/pricing.ts\",\"line\":56,\"severity\":\"critico\",\"category\":\"descuentos\",\"explanation\":\"El descuento del cupón se aplica dentro de calculateBulkSubtotal y luego calculateTotals lo vuelve a aplicar en la línea 67. Esto provoca que el cupón se descuente dos veces y que el subtotal quede mal calculado, violando la regla de aplicar un descuento una sola vez.\",\"suggestion\":\"Eliminar la resta del cupón en calculateBulkSubtotal y retornar solo el subtotal en centavos.\"},{\"file\":\"src/services/pricing.ts\",\"line\":48,\"severity\":\"critico\",\"category\":\"dinero\",\"explanation\":\"Se divide por 100 para realizar cálculos con montos decimales en pesos. La convención obligatoria N° 1 del proyecto exige operar siempre en centavos enteros y usar Math.round para porcentajes, sin usar decimales.\",\"suggestion\":\"const lineTotalCents = line.quantity >= BULK_MIN_QUANTITY ? Math.round(line.lineTotalCents * (1 - BULK_DISCOUNT)) : line.lineTotalCents;\"},{\"file\":\"src/services/pricing.ts\",\"line\":45,\"severity\":\"medio\",\"category\":\"tests\",\"explanation\":\"Se agregó nueva lógica de negocio para el cálculo de precios mayoristas en pricing.ts sin incorporar o actualizar los tests correspondientes, violando la convención 5 del proyecto.\",\"suggestion\":\"Agregar tests unitarios para la función calculateBulkSubtotal y compras mayoristas en tests/.\"}]}",
-      "inputTokens": 6198,
-      "outputTokens": 328
+      "text": "{\n  \"findings\": [\n    {\n      \"file\": \"src/services/pricing.ts\",\n      \"line\": 56,\n      \"severity\": \"critico\",\n      \"category\": \"precios\",\n      \"explanation\": \"El descuento del cupón se aplica en dos lugares: dentro de `calculateBulkSubtotal` (línea 56) y nuevamente en `calculateTotals` (líneas 67 y 73). Esto duplica el descuento al cliente y altera el cálculo real del subtotal.\",\n      \"suggestion\": \"Eliminar la llamada a `calculateDiscount` dentro de `calculateBulkSubtotal` para que solo retorne el subtotal en centavos.\"\n    },\n    {\n      \"file\": \"src/services/pricing.ts\",\n      \"line\": 48,\n      \"severity\": \"critico\",\n      \"category\": \"precios\",\n      \"explanation\": \"Se divide por 100 y se calcula en pesos usando floats (`line.unitPriceCents / 100`), lo que viola la convención obligatoria N° 1 del proyecto y provoca errores de precisión por punto flotante.\",\n      \"suggestion\": \"Calcular en centavos enteros: `const lineTotal = line.quantity >= BULK_MIN_QUANTITY ? Math.round(line.lineTotalCents * (1 - BULK_DISCOUNT)) : line.lineTotalCents;`\"\n    },\n    {\n      \"file\": \"src/services/pricing.ts\",\n      \"line\": 45,\n      \"severity\": \"medio\",\n      \"category\": \"tests\",\n      \"explanation\": \"Se agregó la regla de negocio de descuento mayorista (`calculateBulkSubtotal`) pero no se agregaron ni modificaron tests en `tests/`, violando la convención N° 5 del proyecto.\",\n      \"suggestion\": \"Agregar tests unitarios en `tests/pricing.test.ts` que cubran el cálculo mayorista (redondeos, límite de 10 unidades y combinación con cupones).\"\n    }\n  ]\n}",
+      "inputTokens": 7518,
+      "outputTokens": 462
     }
   ]
 }

@@ -2,13 +2,13 @@
   "key": "04-subtle",
   "provider": "gemini",
   "model": "gemini-3.6-flash",
-  "recordedAt": "2026-10-22T23:05:05.448Z",
-  "promptHash": "e50016aafb2c2328",
+  "recordedAt": "2026-10-23T15:58:57.933Z",
+  "promptHash": "1e1cde3e7b466b4f",
   "responses": [
     {
-      "text": "{\n  \"findings\": [\n    {\n      \"file\": \"src/routes/products.ts\",\n      \"line\": 40,\n      \"severity\": \"critico\",\n      \"category\": \"asincronia\",\n      \"explanation\": \"La función `inventory.reserve` es asíncrona y devuelve una promesa. Al llamarla sin `await`, la respuesta 201 se envía antes de reservar el stock y cualquier error en la reserva no será capturado, lo que puede provocar que se vendan productos sin stock disponible.\",\n      \"suggestion\": \"await inventory.reserve(items);\"\n    }\n  ]\n}",
-      "inputTokens": 5126,
-      "outputTokens": 141
+      "text": "{\"findings\":[{\"file\":\"src/routes/products.ts\",\"line\":40,\"severity\":\"critico\",\"category\":\"asincronia\",\"explanation\":\"Se llama a 'inventory.reserve(items)' sin 'await'. Al ser un método asíncrono que descuenta el stock, omitir el 'await' provoca que la respuesta HTTP 201 se envíe antes de concretar la reserva y que cualquier falla en la operación termine como una promesa rechazada no capturada (unhandled rejection).\",\"suggestion\":\"await inventory.reserve(items);\"}]}",
+      "inputTokens": 5788,
+      "outputTokens": 116
     }
   ]
 }

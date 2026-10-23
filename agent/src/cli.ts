@@ -26,8 +26,15 @@ program
   .option("--json", "salida en JSON para máquinas (CI, GitHub Action)")
   .option("--no-llm", "solo chequeos determinísticos, sin llamar al modelo")
   .option("--record", "graba las respuestas del modelo real en demo/recordings para el modo replay")
-  .action(async (options: { base?: string; json?: boolean; llm: boolean; record?: boolean }) => {
-    const report = await runReview({ cwd: process.cwd(), base: options.base, llm: options.llm, record: options.record });
+  .option("--pre-push", "revisa solo los commits (no los cambios sin commitear); lo usa el hook")
+  .action(async (options: { base?: string; json?: boolean; llm: boolean; record?: boolean; prePush?: boolean }) => {
+    const report = await runReview({
+      cwd: process.cwd(),
+      base: options.base,
+      llm: options.llm,
+      record: options.record,
+      committedOnly: options.prePush,
+    });
     if (options.json) {
       console.log(JSON.stringify(report, null, 2));
     } else {
@@ -55,8 +62,14 @@ program
   .description("Responde preguntas sobre el código del proyecto citando archivos y líneas")
   .argument("<pregunta>", "tu pregunta sobre el código")
   .action(async (question: string) => {
-    const answer = await ask(question, { cwd: process.cwd() });
-    console.log(answer);
+    const started = Date.now();
+    const result = await ask(question, { cwd: process.cwd() });
+    console.log(`\n${result.answer}\n`);
+    if (result.sources.length > 0) {
+      console.log(pc.dim(`Archivos consultados: ${result.sources.join(", ")}`));
+    }
+    const tokens = result.inputTokens ? ` · ${result.inputTokens} tokens de entrada / ${result.outputTokens ?? 0} de salida` : "";
+    console.log(pc.dim(`Tiempo: ${((Date.now() - started) / 1000).toFixed(1)} s${tokens}\n`));
   });
 
 program

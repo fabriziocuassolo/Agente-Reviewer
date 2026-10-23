@@ -42,28 +42,32 @@ const DIFF_FLAGS = ["--no-color", "--no-ext-diff", "-U3"];
  * Orden de decisión:
  * 1. `--base <ref>`: todo lo que cambió desde el merge-base con esa ref (commits + sin commitear).
  * 2. Si hay cambios sin commitear: diff contra HEAD (el caso típico mientras se programa).
- * 3. Si el árbol está limpio: commits de la rama actual contra la rama base
- *    (el caso del hook pre-push). En la propia rama base se compara contra su upstream.
+ * 3. Si el árbol está limpio: commits de la rama actual contra la rama base.
+ *    En la propia rama base se compara contra su upstream.
+ *
+ * Con `committedOnly` (lo usa el hook pre-push) se revisan SOLO los commits, aunque
+ * haya cambios sin commitear: lo que se pushea son commits, no el árbol de trabajo.
  */
-export function collectChanges(root: string, baseBranch: string, baseRef?: string): ChangeSet {
+export function collectChanges(root: string, baseBranch: string, baseRef?: string, committedOnly = false): ChangeSet {
   if (!gitOk(["rev-parse", "--verify", "--quiet", "HEAD"], root)) {
     throw new GuardianError("El repositorio todavía no tiene commits: no hay contra qué comparar.");
   }
 
-  if (baseRef) {
-    if (!gitOk(["rev-parse", "--verify", "--quiet", baseRef], root)) {
-      throw new GuardianError(`No existe la referencia "${baseRef}".`);
-    }
+  if (baseRef && !gitOk(["rev-parse", "--verify", "--quiet", baseRef], root)) {
+    throw new GuardianError(`No existe la referencia "${baseRef}".`);
+  }
+
+  if (baseRef && !committedOnly) {
     const mergeBase = git(["merge-base", baseRef, "HEAD"], root).trim();
     return withUntracked(root, `cambios desde ${baseRef}`, mergeBase);
   }
 
   const dirty = git(["status", "--porcelain"], root).trim() !== "";
-  if (dirty) {
+  if (dirty && !committedOnly) {
     return withUntracked(root, "cambios sin commitear contra HEAD", "HEAD");
   }
 
-  const base = findBaseRef(root, baseBranch);
+  const base = baseRef ?? findBaseRef(root, baseBranch);
   if (!base) {
     return { description: "sin cambios (no hay rama base con la cual comparar)", diff: "", files: [] };
   }

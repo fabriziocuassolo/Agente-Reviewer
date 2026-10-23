@@ -35,8 +35,8 @@ Antes del push (hook `pre-push` opcional) y en cada pull request (GitHub Action)
 ## Instalación
 
 ```bash
-git clone https://github.com/tu-usuario/storefront-guardian.git
-cd storefront-guardian
+git clone https://github.com/fabriziocuassolo/Agente-Reviewer.git
+cd Agente-Reviewer
 npm install
 npm link
 ```
@@ -144,7 +144,7 @@ Cada escenario aplica un cambio sobre la tienda y ejecuta `guardian review`:
 | `03-security` | innerHTML con datos de usuario (XSS) + API key hardcodeada | **BLOQUEADO** (secreto, sin IA) |
 | `04-subtle` | `inventory.reserve()` sin `await` en nueva ruta de compra rápida | **BLOQUEADO** (1 crítico) |
 
-En el modo replay (sin modelo real) tarda ~2 s por escenario. Con Gemini u Ollama, entre 10 y 30 s según el modelo.
+En el modo replay (sin modelo real) tarda ~2 s por escenario. Con Gemini, entre 10 y 60 s según el tamaño del cambio y la demanda del modelo (medido en la capa gratuita).
 
 ### 3. Preguntale sobre el código
 
@@ -163,7 +163,7 @@ Desde el repo de la tienda (o cualquier repo tuyo):
 guardian install-hook
 ```
 
-Ahora `guardian review` se ejecuta automáticamente antes de cada `git push`. Si está BLOQUEADO, el push se cancela. Para saltearlo una vez:
+Ahora, antes de cada `git push`, Guardian revisa **los commits que se van a pushear** (`guardian review --pre-push`, que ignora los cambios sin commitear). Si está BLOQUEADO, el push se cancela. Si Guardian no está disponible, el hook avisa y deja pushear. Para saltearlo una vez:
 ```bash
 git push --no-verify
 ```
@@ -191,9 +191,9 @@ guardian uninstall-hook
      "baseBranch": "main",
      "gate": {
        "rules": [
-         { "condition": "critico", "min": 1, "decision": "BLOQUEADO" },
-         { "condition": "alto", "min": 3, "decision": "BLOQUEADO" },
-         { "condition": "alto", "min": 1, "decision": "ADVERTENCIA" }
+         { "name": "critico-bloquea", "severity": "critico", "min": 1, "decision": "BLOQUEADO" },
+         { "name": "muchos-altos-bloquean", "severity": "alto", "min": 3, "decision": "BLOQUEADO" },
+         { "name": "alto-advierte", "severity": "alto", "min": 1, "decision": "ADVERTENCIA" }
        ]
      },
      "skills": {
@@ -228,19 +228,96 @@ guardian uninstall-hook
 
 ---
 
-## Configuración completa
+## Configuración
 
-Ver documentación detallada de configuración, GitHub Action, privacidad y limitaciones en [docs/GUIA.md](docs/GUIA.md).
+Todo es opcional: sin configuración, Guardian usa valores por defecto razonables.
+
+| Archivo (en el repo revisado) | Para qué | ¿Se commitea? |
+|---|---|---|
+| `.guardian/config.json` | Rama base, comandos de lint/tipos/tests, reglas del gate, tamaño del contexto, mapeo de skills | Sí |
+| `.guardian/skills/*.md` | Criterios de revisión por área (precios, seguridad, frontend...) | Sí |
+| `.guardian/memory.json` | Falsos positivos descartados con `guardian dismiss` | Sí (es conocimiento del equipo) |
+| `.guardian/last-review.json` | Último reporte, lo usa `dismiss` | No |
+| `.guardianignore` | Archivos que nunca se envían al modelo | Sí |
+| `docs/CONVENTIONS.md` | Convenciones del proyecto que el revisor usa como criterio | Sí |
+
+Ejemplo completo de `config.json` (es el que usa la tienda de ejemplo, en [storefront-demo/.guardian/config.json](storefront-demo/.guardian/config.json)):
+
+```json
+{
+  "baseBranch": "main",
+  "checks": {
+    "lint": "npm run lint --silent",
+    "typecheck": "npm run typecheck --silent",
+    "test": "npm test --silent",
+    "timeoutMs": 120000
+  },
+  "gate": {
+    "rules": [
+      { "name": "critico-bloquea", "severity": "critico", "min": 1, "decision": "BLOQUEADO" },
+      { "name": "muchos-altos-bloquean", "severity": "alto", "min": 3, "decision": "BLOQUEADO" },
+      { "name": "alto-advierte", "severity": "alto", "min": 1, "decision": "ADVERTENCIA" },
+      { "name": "medio-advierte", "severity": "medio", "min": 1, "decision": "ADVERTENCIA" }
+    ]
+  },
+  "context": { "maxChars": 80000 },
+  "skills": {
+    "ecommerce-pricing": ["src/services/pricing.ts", "src/services/discounts.ts"],
+    "security": ["src/**", "public/**"]
+  }
+}
+```
+
+- `checks.lint` / `typecheck` / `test`: un comando, `null` para desactivarlo, o se omite para autodetectarlo desde `package.json`.
+- `gate.rules`: las reglas de BLOQUEADO se evalúan antes que las de ADVERTENCIA; la primera que se cumple decide.
+- `skills`: nombre de la skill → patrones de archivos (sintaxis de `.gitignore`). Solo se carga si el cambio toca alguno.
+
+### Memoria (`.guardian/memory.json`)
+
+`guardian dismiss <id> "<motivo>"` guarda el hallazgo descartado. En las próximas revisiones:
+1. ese hallazgo no se muestra ni cuenta para la decisión;
+2. se le pasa al modelo como "excepción conocida", para que no repita el mismo criterio.
+
+No se pueden descartar fallos de lint, tipos o tests: se corrigen o se ajusta el comando.
+
+---
+
+## GitHub Action
+
+[.github/workflows/guardian.yml](.github/workflows/guardian.yml) corre `guardian review --json` en cada pull request de este repo, publica (o actualiza) un comentario con la decisión y los hallazgos, y marca el check en rojo si el resultado es BLOQUEADO.
+
+Para activarla: **Settings → Secrets and variables → Actions → New repository secret** con `GEMINI_API_KEY`. Sin la key la Action igual corre, con los chequeos determinísticos.
+
+---
+
+## Privacidad
+
+- **Ollama:** el código nunca sale de tu máquina.
+- **Gemini, capa gratuita:** según los términos de Google, lo que se envía puede usarse para mejorar sus productos. **Con código real de una empresa usá Ollama o un plan pago sin retención de datos.**
+- **Replay:** no envía nada a la red.
+- En todos los casos, antes de enviar código Guardian: redacta lo que parezca un secreto (`[SECRETO REDACTADO]`), nunca envía `.env*`, `node_modules`, `dist`, binarios ni lockfiles, y respeta `.guardianignore`.
+
+---
+
+## Limitaciones conocidas
+
+1. **Cuota gratuita de Gemini:** unas 20 revisiones por día y por modelo. Si se agota, Guardian sigue con los chequeos determinísticos y la decisión queda como mucho en ADVERTENCIA (regla `ia-no-disponible`).
+2. **Replay solo sirve para los escenarios de demo.** Para revisar código propio hace falta Gemini u Ollama.
+3. **Ollama no fue probado en la máquina de desarrollo** (está implementado con la API documentada).
+4. **Contexto acotado:** se envían el diff, los archivos modificados y sus imports directos, hasta ~80.000 caracteres.
+5. **El revisor sugiere correcciones pero no las valida** (no ejecuta el arreglo propuesto).
+6. **`ask` busca por palabras clave**, sin búsqueda semántica ni memoria entre preguntas.
+7. Si en el chequeo determinístico aparece un fallo crítico (por ejemplo, un secreto), no se llama al LLM: otros problemas del mismo cambio aparecen recién en la siguiente revisión.
 
 ---
 
 ## Comandos disponibles
 
 ```bash
-guardian review [--base <ref>] [--json] [--no-llm] [--record]
+guardian review [--base <ref>] [--json] [--no-llm] [--record] [--pre-push]
 ```
 Revisa los cambios y decide: APROBADO / ADVERTENCIA / BLOQUEADO.
-Exit code 1 si está bloqueado.
+Exit code 1 si está bloqueado. `--pre-push` revisa solo los commits (lo usa el hook).
 
 ```bash
 guardian ask "<pregunta>"
